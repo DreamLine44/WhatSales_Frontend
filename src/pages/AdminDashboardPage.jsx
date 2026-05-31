@@ -587,10 +587,11 @@ function EditTenantModal({ tenant, onClose, onUpdated }) {
                 ['whatsappAccessToken', 'Access Token', true],
                 ['whatsappBusinessId', 'Business Account ID (WABA ID)', false],
                 ['whatsappVerifyToken', 'Webhook Verify Token', false],
-              ].map(([key, lbl, secret]) => (
+              ].map(([key, lbl, secret, hint]) => (
                 <div key={key}>
                   <label style={labelSt}>{lbl}</label>
-                  <input type={secret ? 'password' : 'text'} value={form[key]} onChange={e => set(key, e.target.value)} placeholder="Leave blank to keep existing" style={{ marginTop: 4, fontFamily: 'monospace', fontSize: '0.82rem' }} />
+                  {hint && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2, marginBottom: 3, lineHeight: 1.4 }}>{hint}</div>}
+                  <input type={secret ? 'password' : 'text'} value={form[key]} onChange={e => set(key, e.target.value)} placeholder="Leave blank to keep existing" style={{ marginTop: 2, fontFamily: 'monospace', fontSize: '0.82rem' }} />
                 </div>
               ))}
             </div>
@@ -661,6 +662,8 @@ function TenantRow({ tenant, onDeleted, onUpdated }) {
       if (!key) throw new Error('Backend did not return a new API key');
       setNewKey(key);
       toast.success('API key regenerated');
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'API key regeneration failed');
     } finally { setRegening(false); }
   };
 
@@ -685,7 +688,7 @@ function TenantRow({ tenant, onDeleted, onUpdated }) {
     } finally { setDeleting(false); }
   };
 
-  const hasWA = !!(tenant.whatsapp?.phoneNumberId);
+  const hasWA = !!(tenant.whatsapp?.connected || tenant.whatsapp?.phoneNumberId);
 
   return (
     <>
@@ -803,7 +806,7 @@ export default function AdminDashboardPage() {
   const stats = {
     total: tenants.length,
     active: tenants.filter(t => t.status === 'ACTIVE').length,
-    connected: tenants.filter(t => t.whatsapp?.phoneNumberId).length,
+    connected: tenants.filter(t => t.whatsapp?.connected || t.whatsapp?.phoneNumberId).length,
   };
 
   return (

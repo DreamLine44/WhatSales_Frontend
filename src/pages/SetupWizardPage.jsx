@@ -44,7 +44,7 @@ export default function SetupWizardPage() {
   const cfg = getBizConfig(mode);
   const selectedMode = BUSINESS_MODES.find(m => m.value === mode);
   const bizName = biz?.name || '';
-  const isConnected = !!(biz?.phoneNumberId || biz?.whatsapp?.phoneNumberId);
+  const isConnected = !!(biz?.whatsapp?.connected || biz?.whatsapp?.phoneNumberId || biz?.phoneNumberId);
   const hasMenuItems = false; // We don't load count here — link to the page
   const tid = localStorage.getItem('ws_tenant_id') || '';
 

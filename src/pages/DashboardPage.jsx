@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ShoppingCart, CalendarCheck, MessageSquare, TrendingUp, AlertCircle, Zap, ArrowRight } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { analytics, orders, sessions } from '../services/api';
+import { analytics, orders, sessions, business as businessApi } from '../services/api';
 import { PageHeader, StatCard, Card, Spinner, Badge, Button, InfoBanner } from '../components/ui/index.jsx';
 import { useAuth } from '../store/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -36,6 +36,7 @@ export default function DashboardPage() {
   const [revenue, setRevenue] = useState([]);
   const [pendingOrders, setPendingOrders] = useState([]);
   const [humanModeCount, setHumanModeCount] = useState(0);
+  const [biz, setBiz] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,11 +45,13 @@ export default function DashboardPage() {
       analytics.revenue(),
       orders.list({ status: 'pending', limit: 5 }),
       sessions.humanModeCount(),
-    ]).then(([ov, rev, ord, hm]) => {
+      businessApi.get(),
+    ]).then(([ov, rev, ord, hm, bizRes]) => {
       setStats(ov.data);
       setRevenue(rev.data?.data || []);
       setPendingOrders(ord.data?.orders || []);
       setHumanModeCount(hm.data?.count || 0);
+      setBiz(bizRes.data?.business || null);
     }).catch(() => toast.error('Failed to load dashboard data')).finally(() => setLoading(false));
   }, []);
 
@@ -61,7 +64,7 @@ export default function DashboardPage() {
 
   if (loading) return <Spinner />;
 
-  const isWAConnected = !!(tenant?.phoneNumberId || tenant?.whatsapp?.phoneNumberId);
+  const isWAConnected = !!(tenant?.whatsapp?.connected || tenant?.whatsapp?.phoneNumberId || tenant?.phoneNumberId || biz?.whatsapp?.connected || biz?.whatsapp?.phoneNumberId);
 
   return (
     <div className="fade-in">

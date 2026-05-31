@@ -55,7 +55,7 @@ export default function WhatsAppPage() {
 
   if (loading) return <Spinner />;
 
-  const isConnected = !!(biz?.phoneNumberId || biz?.whatsapp?.phoneNumberId);
+  const isConnected = !!(biz?.whatsapp?.connected || biz?.whatsapp?.phoneNumberId || biz?.phoneNumberId);
   const tenantId = tenant?.tenantId || localStorage.getItem('ws_tenant_id') || '';
   const bizName = biz?.name || '';
   const adminPhone = biz?.adminPhone || '';
@@ -80,7 +80,7 @@ Please configure my WhatsApp Business credentials so my bot starts working. Than
 
       {/* ── STATUS BANNER ── */}
       {isConnected ? (
-        <ConnectedBanner onCopy={copy} copied={copied} webhookUrl={WEBHOOK_URL} />
+        <ConnectedBanner onCopy={copy} copied={copied} webhookUrl={WEBHOOK_URL} phoneNumberId={biz?.whatsapp?.phoneNumberId} />
       ) : (
         <NotConfiguredSection
           bizName={bizName}
@@ -164,7 +164,7 @@ Please configure my WhatsApp Business credentials so my bot starts working. Than
 }
 
 /* ── Connected Banner ── */
-function ConnectedBanner({ webhookUrl, onCopy, copied }) {
+function ConnectedBanner({ webhookUrl, onCopy, copied, phoneNumberId }) {
   return (
     <Card style={{ background: 'linear-gradient(135deg, var(--green-dim) 0%, rgba(25,163,72,0.04) 100%)', border: '1.5px solid rgba(25,163,72,0.22)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -178,6 +178,11 @@ function ConnectedBanner({ webhookUrl, onCopy, copied }) {
           <div style={{ fontSize: '0.83rem', color: 'var(--text-muted)', marginTop: 3 }}>
             Your WhatsApp Business number is linked. The bot is replying to customers.
           </div>
+          {phoneNumberId && (
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4, fontFamily: 'monospace' }}>
+              Phone Number ID: {phoneNumberId}
+            </div>
+          )}
         </div>
         <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '4px 10px', borderRadius: 20, background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid rgba(25,163,72,0.2)', flexShrink: 0 }}>
           ACTIVE

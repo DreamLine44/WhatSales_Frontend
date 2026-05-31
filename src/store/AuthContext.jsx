@@ -17,6 +17,7 @@ export function AuthProvider({ children }) {
     authApi.verify()
       .then(({ business, user }) => {
         setUser(user);
+        // business response includes whatsapp.connected so tenant context reflects real connection state
         setTenant({ tenantId: tid, status: 'ACTIVE', ...business });
       })
       .catch(() => {
@@ -34,6 +35,7 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (apiKey, tenantId) => {
     const result = await authApi.login(apiKey, tenantId);
     setUser(result.user);
+    // business response now includes whatsapp.connected + whatsapp.phoneNumberId from backend fix
     setTenant({ tenantId, status: 'ACTIVE', ...result.business });
     return result;
   }, []);
