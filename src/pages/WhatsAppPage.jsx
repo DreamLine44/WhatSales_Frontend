@@ -67,7 +67,7 @@ export default function WhatsAppPage() {
           adminPhone is the admin's notification number, unrelated to bot credentials.
           If the backend returns a webhookUrl (set when credentials are configured by admin),
           we treat the bot as connected. Otherwise show "not yet configured". */}
-      {biz?.webhookUrl ? (
+      {(biz?.status === 'ACTIVE' || biz?.phoneNumberId) ? (
         <Card style={{
           marginBottom: 24,
           background: 'var(--green-dim)',

@@ -6,6 +6,8 @@ import {
   EmptyState, Spinner, Modal, DetailRow, FilterTabs, SearchInput
 } from '../components/ui/index.jsx';
 import toast from 'react-hot-toast';
+import { useAuth } from '../store/AuthContext';
+import { getBizConfig } from '../utils/businessConfig';
 import { format } from 'date-fns';
 
 const FILTERS = [
@@ -17,6 +19,8 @@ const FILTERS = [
 ];
 
 export default function BookingsPage() {
+  const { tenant } = useAuth();
+  const cfg = getBizConfig(tenant?.businessMode || 'GENERIC');
   const [filter, setFilter]     = useState('');
   const [search, setSearch]     = useState('');
   const [rawData, setRawData]   = useState([]);
@@ -83,7 +87,7 @@ export default function BookingsPage() {
 
   return (
     <div className="fade-in">
-      <PageHeader title="Bookings" subtitle="Manage customer appointment requests" />
+      <PageHeader title={cfg.transactions.bookingsPageTitle || "Bookings"} subtitle={cfg.transactions.bookingsSubtitle || "Manage customer bookings"} />
 
       <Card style={{ marginBottom: 20, padding: '14px 18px' }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -99,7 +103,7 @@ export default function BookingsPage() {
 
       <Card padding="0">
         {loading ? <Spinner /> : data.length === 0 ? (
-          <EmptyState icon={CalendarCheck} title="No bookings yet" body="Appointment requests via WhatsApp appear here" />
+          <EmptyState icon={CalendarCheck} title={`No ${(cfg.transactions.bookingsNavLabel || "bookings").toLowerCase()} yet`} body={cfg.transactions.emptyBookingsBody || "Booking requests from WhatsApp will appear here"} />
         ) : (
           <Table headers={['Ref', 'Customer', 'Service', 'Date', 'Time', 'Party', 'Status', 'Actions']}>
             {data.map(b => (

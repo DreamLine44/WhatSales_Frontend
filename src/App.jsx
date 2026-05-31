@@ -3,6 +3,7 @@ import { AdminProvider, useAdmin } from './store/AdminContext';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './store/AuthContext';
+import { getNavVisibility } from './utils/businessConfig';
 import DashboardLayout from './components/layout/DashboardLayout';
 
 import LoginPage        from './pages/LoginPage';
@@ -25,6 +26,15 @@ function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
   if (loading) return <SplashScreen />;
   if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+/** Redirects /menu → /services for service-based modes, and vice versa. Wraps the real page. */
+function CatalogRoute({ page, children }) {
+  const { tenant } = useAuth();
+  const vis = getNavVisibility(tenant?.businessMode || 'GENERIC');
+  if (page === 'menu'     && !vis.showMenu)    return <Navigate to="/services" replace />;
+  if (page === 'services' && !vis.showServices) return <Navigate to="/menu"     replace />;
   return children;
 }
 
@@ -115,8 +125,8 @@ export default function App() {
               <Route path="dashboard"  element={<DashboardPage />} />
               <Route path="orders"     element={<OrdersPage />} />
               <Route path="bookings"   element={<BookingsPage />} />
-              <Route path="menu"       element={<MenuPage />} />
-              <Route path="services"   element={<ServicesPage />} />
+              <Route path="menu"       element={<CatalogRoute page="menu"><MenuPage /></CatalogRoute>} />
+              <Route path="services"   element={<CatalogRoute page="services"><ServicesPage /></CatalogRoute>} />
               <Route path="sessions"   element={<SessionsPage />} />
               <Route path="analytics"  element={<AnalyticsPage />} />
               <Route path="customers"  element={<CustomersPage />} />

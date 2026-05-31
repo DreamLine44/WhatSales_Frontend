@@ -1,71 +1,64 @@
 import { useEffect, useState } from 'react';
-import { Save, RefreshCw } from 'lucide-react';
+import { Save, RefreshCw, Sparkles, CheckCircle } from 'lucide-react';
 import { business as businessApi } from '../services/api';
+import { useAuth } from '../store/AuthContext';
+import { getDefaultFlow } from '../data/defaultFlows';
 import {
-  PageHeader, Card, Button, Spinner
+  PageHeader, Card, Button, Spinner, SectionTitle
 } from '../components/ui/index.jsx';
 import toast from 'react-hot-toast';
 
-/**
- * Maps to BusinessConfig.customMessages:
- *   welcomeMessage  — shown by moduleRouter GREET case
- *   closed   — shown by webhookController step 5 (hours enforcement)
- *              backend reads customMessages.closed (NOT closedMessage)
- *              webhookController.js line 331: business?.customMessages?.closed
- *   loopFallback    — shown by checkAndHandleLoop() when MAX_LOOP reached
- *   fallback        — shown by moduleRouter FALLBACK/CLARIFY case
- *
- * NOTE: The closed message key is 'closed' — backend reads customMessages.closed
- * (webhookController.js:331). Do NOT rename to 'closedMessage' — that is a
- * different legacy fallback field and the bot will not read it.
- */
 const FIELDS = [
   {
     key: 'welcomeMessage',
     label: 'Welcome message',
-    hint: 'Shown when a customer first messages you, or types "hi". Leave blank to use the AI-generated greeting.',
-    placeholder: '👋 Welcome to Mariama\'s Kitchen! How can I help you today?',
+    hint: 'Sent when a customer first messages you, or types "hi".',
     field: 'textarea',
   },
   {
-    key: 'closed',  // backend reads customMessages.closed — NOT closedMessage
+    key: 'closed',
     label: 'Closed message',
-    hint: 'Shown when a customer messages outside your configured business hours (requires Hours to be enabled).',
-    placeholder: '⏰ We\'re currently closed. Our hours are Mon–Sat 9am–9pm. We\'ll be back soon! 🙏',
+    hint: 'Sent when a customer messages outside your business hours.',
     field: 'textarea',
   },
   {
     key: 'loopFallback',
     label: 'Loop break message',
-    hint: 'Shown when the bot detects a customer sending the same message 3 times in a row (loop prevention). The main menu buttons are appended automatically.',
-    placeholder: 'I noticed we keep going in circles! Let me take you back to the main menu. 😊',
+    hint: 'Sent when the bot detects the same message 3 times in a row. The main menu is appended automatically.',
     field: 'textarea',
   },
   {
     key: 'fallback',
-    label: 'Fallback / AI reply message',
-    hint: 'Shown when the bot can\'t understand what the customer wants and falls back to the AI. Leave blank to use the mode default.',
-    placeholder: 'How can I help you today? 😊',
+    label: 'Fallback message',
+    hint: 'Sent when the bot can\'t understand what the customer wants.',
     field: 'input',
   },
 ];
 
 export default function BotConfigPage() {
-  const [form, setForm]       = useState({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving]   = useState(false);
+  const { tenant } = useAuth();
+  const businessMode = tenant?.businessMode || 'GENERIC';
+
+  const [form, setForm]         = useState({});
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
+  const [isEmpty, setIsEmpty]   = useState(false);
+  const [applied, setApplied]   = useState(false);
 
   useEffect(() => {
     businessApi.get()
       .then(res => {
         const m = res.data?.business?.customMessages || {};
-        setForm({
+        const loaded = {
           welcomeMessage: m.welcomeMessage || '',
-          // backend reads customMessages.closed (webhookController.js:331)
-          closed:  m.closed  || '',
+          closed:         m.closed         || '',
           loopFallback:   m.loopFallback   || '',
           fallback:       m.fallback       || '',
-        });
+        };
+        setForm(loaded);
+        // Detect if tenant has never configured anything
+        const allEmpty = Object.values(loaded).every(v => !v.trim());
+        setIsEmpty(allEmpty);
       })
       .catch(() => toast.error('Failed to load bot config'))
       .finally(() => setLoading(false));
@@ -73,10 +66,25 @@ export default function BotConfigPage() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const applyDefaults = (confirm = false) => {
+    const hasContent = Object.values(form).some(v => v.trim());
+    if (hasContent && !confirm) {
+      // Ask before overwriting
+      if (!window.confirm('Apply default template? This will replace your current messages.')) return;
+    }
+    const flow = getDefaultFlow(businessMode);
+    setForm({ ...flow.messages });
+    setIsEmpty(false);
+    setApplied(true);
+    setTimeout(() => setApplied(false), 3000);
+    toast.success(`Default ${flow.label} template applied — save to keep it!`);
+  };
+
   const save = async () => {
     setSaving(true);
     try {
       await businessApi.updateMessages(form);
+      setIsEmpty(false);
       toast.success('Bot messages saved ✅');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Save failed');
@@ -85,30 +93,49 @@ export default function BotConfigPage() {
     }
   };
 
-  const reset = (key) => set(key, '');
-
   if (loading) return <Spinner />;
+
+  const flow = getDefaultFlow(businessMode);
 
   return (
     <div className="fade-in">
       <PageHeader
         title="Bot Messages"
-        subtitle="Customise what your WhatsApp bot says in key situations"
+        subtitle="What your bot says in key situations"
         action={<Button loading={saving} onClick={save}><Save size={15} /> Save All</Button>}
       />
 
-      <Card style={{ marginBottom: 24, background: 'var(--blue-dim)', border: '1px solid rgba(108,156,255,0.25)', padding: '14px 18px' }}>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <span>💡</span>
-          <div style={{ fontSize: '0.87rem', color: 'var(--blue)', lineHeight: 1.6 }}>
-            All fields are optional. Leave blank to use the smart defaults built into the bot.
-            Emoji are supported and encouraged — they improve customer engagement on WhatsApp.
+      {/* Auto-suggest banner for first-time setup */}
+      {isEmpty && (
+        <Card style={{ marginBottom: 20, background: 'var(--primary-dim)', border: '1.5px solid rgba(30,138,66,0.25)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: '2rem', flexShrink: 0 }}>✨</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.95rem', color: 'var(--primary)', marginBottom: 3 }}>
+                Start with a ready-made {flow.label} template
+              </div>
+              <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                Pre-written messages built for your business type — working out of the box, customise anytime.
+              </div>
+            </div>
+            <Button onClick={() => applyDefaults(true)} style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
+              <Sparkles size={14} /> Apply template
+            </Button>
           </div>
+        </Card>
+      )}
+
+      {/* Manual template button when not empty */}
+      {!isEmpty && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+          <Button variant="secondary" size="sm" onClick={() => applyDefaults(false)}>
+            {applied ? <><CheckCircle size={13} color="var(--green)" /> Applied!</> : <><Sparkles size={13} /> Use {flow.label} template</>}
+          </Button>
         </div>
-      </Card>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-        {FIELDS.map(({ key, label, hint, placeholder, field }) => (
+        {FIELDS.map(({ key, label, hint, field }) => (
           <Card key={key}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
               <div>
@@ -117,10 +144,10 @@ export default function BotConfigPage() {
               </div>
               {form[key] && (
                 <button
-                  onClick={() => reset(key)}
+                  onClick={() => set(key, '')}
                   style={{ background: 'none', color: 'var(--text-muted)', fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', flexShrink: 0 }}
                 >
-                  <RefreshCw size={11} /> Reset
+                  <RefreshCw size={11} /> Clear
                 </button>
               )}
             </div>
@@ -129,14 +156,14 @@ export default function BotConfigPage() {
               <textarea
                 value={form[key] || ''}
                 onChange={e => set(key, e.target.value)}
-                placeholder={placeholder}
-                style={{ minHeight: 88 }}
+                placeholder={getDefaultFlow(businessMode).messages[key]}
+                style={{ minHeight: 100 }}
               />
             ) : (
               <input
                 value={form[key] || ''}
                 onChange={e => set(key, e.target.value)}
-                placeholder={placeholder}
+                placeholder={getDefaultFlow(businessMode).messages[key]}
               />
             )}
 
@@ -149,6 +176,10 @@ export default function BotConfigPage() {
           </Card>
         ))}
       </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
+        <Button loading={saving} onClick={save}><Save size={15} /> Save All</Button>
+      </div>
     </div>
   );
 }
@@ -156,23 +187,12 @@ export default function BotConfigPage() {
 function WhatsAppBubble({ text }) {
   return (
     <div style={{
-      background: 'var(--bg-overlay)',
-      border: '1px solid var(--border)',
-      borderRadius: '0 12px 12px 12px',
-      padding: '10px 14px',
-      fontSize: '0.87rem',
-      color: 'var(--text-primary)',
-      lineHeight: 1.55,
-      whiteSpace: 'pre-wrap',
-      maxWidth: 420,
-      position: 'relative',
+      background: 'var(--bg-overlay)', border: '1px solid var(--border)',
+      borderRadius: '0 12px 12px 12px', padding: '10px 14px',
+      fontSize: '0.87rem', color: 'var(--text-primary)',
+      lineHeight: 1.55, whiteSpace: 'pre-wrap', maxWidth: 420, position: 'relative',
     }}>
-      <div style={{
-        position: 'absolute', top: 0, left: -8,
-        width: 0, height: 0,
-        borderTop: '8px solid var(--border)',
-        borderLeft: '8px solid transparent',
-      }} />
+      <div style={{ position: 'absolute', top: 0, left: -8, width: 0, height: 0, borderTop: '8px solid var(--border)', borderLeft: '8px solid transparent' }} />
       {text}
     </div>
   );

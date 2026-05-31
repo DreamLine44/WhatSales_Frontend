@@ -7,6 +7,7 @@ import { useAuth } from '../store/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '../utils/currency';
+import { getBizConfig } from '../utils/businessConfig';
 
 const TIP_STYLE = {
   contentStyle: {
@@ -29,6 +30,7 @@ const STATUS_COLORS = {
 
 export default function DashboardPage() {
   const { user, tenant } = useAuth();
+  const cfg = getBizConfig(tenant?.businessMode || 'GENERIC');
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [revenue, setRevenue] = useState([]);
@@ -71,7 +73,7 @@ export default function DashboardPage() {
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.65rem', fontWeight: 800, letterSpacing: '-0.03em' }}>
             {greeting()}, {user?.name?.split(' ')[0] || 'there'} 👋
           </h1>
-          <p style={{ marginTop: 5, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Here's what's happening with your WhatsApp bot today</p>
+          <p style={{ marginTop: 5, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Here's what's happening with {cfg.label.toLowerCase()} today</p>
         </div>
         <Button variant="mint" onClick={() => navigate('/analytics')} style={{ gap: 6 }}>
           View Analytics <ArrowRight size={14} />
@@ -107,11 +109,25 @@ export default function DashboardPage() {
         gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))',
         gap: 16, marginBottom: 24,
       }}>
-        <StatCard label="Total Orders"    value={stats?.totalOrders ?? '—'}  sub="Last 30 days"       icon={ShoppingCart} color="var(--primary)" />
+        {/* Orders stat — label varies by mode */}
+        {(cfg.transactions.type === 'orders' || cfg.transactions.type === 'both') && (
+          <StatCard label={cfg.dashboard.ordersStatLabel}  value={stats?.totalOrders ?? '—'}  sub="Last 30 days"       icon={ShoppingCart} color="var(--primary)" />
+        )}
         <StatCard label="Revenue"         value={stats?.totalRevenue ? formatCurrency(stats.totalRevenue, tenant?.payment?.currency) : '—'} sub="Confirmed payments" icon={TrendingUp} color="var(--green)" trend="up" />
-        <StatCard label="Bookings"        value={stats?.totalBookings ?? '—'} sub="Last 30 days"       icon={CalendarCheck} color="var(--blue)" />
-        <StatCard label="Active Sessions" value={stats?.activeSessions ?? '—'} sub="In human mode"    icon={MessageSquare} color="var(--purple)" />
+        {/* Bookings stat — only for booking/both modes */}
+        {(cfg.transactions.type === 'bookings' || cfg.transactions.type === 'both') && (
+          <StatCard label={cfg.dashboard.bookingsStatLabel} value={stats?.totalBookings ?? '—'} sub="Last 30 days"       icon={CalendarCheck} color="var(--blue)" />
+        )}
+        <StatCard label="Live Sessions" value={stats?.activeSessions ?? '—'} sub="In human mode"    icon={MessageSquare} color="var(--purple)" />
       </div>
+
+      {/* Mode-specific tip */}
+      {cfg.dashboard.tipText && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--primary-dim)', border: '1px solid var(--border-accent)', borderRadius: 'var(--radius-md)', padding: '10px 16px', marginBottom: 20 }}>
+          <span style={{ fontSize: '1rem', flexShrink: 0 }}>{cfg.emoji}</span>
+          <span style={{ fontSize: '0.83rem', color: 'var(--primary)', lineHeight: 1.5 }}>{cfg.dashboard.tipText}</span>
+        </div>
+      )}
 
       {/* Charts row */}
       <div className="dashboard-charts-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 16, marginBottom: 24 }}>
@@ -188,9 +204,9 @@ export default function DashboardPage() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--blue)', boxShadow: '0 0 6px var(--blue)' }} />
-                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem' }}>Orders Awaiting Review</div>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem' }}>{cfg.transactions.ordersNavLabel || 'Orders'} Awaiting Review</div>
               </div>
-              <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Pending orders need approval or rejection</div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Pending {(cfg.transactions.ordersNavLabel || 'orders').toLowerCase()} need approval or rejection</div>
             </div>
             {/* FIX: was /orders?filter=proof_received — 'proof_received' is a paymentStatus, not an order status.
                  Backend status filter only supports: pending | confirmed | completed | cancelled | payment_failed | rejected.

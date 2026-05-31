@@ -10,9 +10,34 @@ import {
   Modal, Grid, Badge, SectionTitle,
 } from '../components/ui/index.jsx';
 import toast from 'react-hot-toast';
+import { useAuth } from '../store/AuthContext';
+import { getBizConfig } from '../utils/businessConfig';
 
 /* ─── constants ──────────────────────────────────────────────── */
 const BLANK = { name: '', description: '', price: '', category: '', available: true, stock: '' };
+
+/** Mode-specific placeholder for the description field */
+const DESC_PLACEHOLDER = {
+  RESTAURANT:  'e.g. Tender grilled chicken with jollof rice and plantain',
+  BAKERY:      'e.g. Rich chocolate sponge with ganache frosting, serves 8',
+  FASHION:     'e.g. 100% cotton, relaxed fit. Available in S–2XL',
+  COSMETICS:   'e.g. Lightweight formula, suitable for oily & combination skin',
+  ELECTRONICS: 'e.g. 128GB storage, 6.5" AMOLED, includes 1-year warranty',
+  RETAIL:      'e.g. Brief product description for customers',
+  SUPERMARKET: 'e.g. Farm-fresh, packed daily. 1 litre carton',
+  PHARMACY:    'e.g. 500mg tablets, pack of 20. For pain & fever relief',
+};
+const NAME_PLACEHOLDER = {
+  RESTAURANT:  'e.g. Grilled Chicken, Jollof Rice',
+  BAKERY:      'e.g. Chocolate Cake, Sourdough Bread',
+  FASHION:     'e.g. Floral Summer Dress, Slim Chinos',
+  COSMETICS:   'e.g. Hydrating Face Serum, Matte Lipstick',
+  ELECTRONICS: 'e.g. Samsung Galaxy A54, USB-C Hub',
+  RETAIL:      'e.g. Product name',
+  SUPERMARKET: 'e.g. Fresh Orange Juice, Basmati Rice 5kg',
+  PHARMACY:    'e.g. Paracetamol 500mg, Vitamin C 1000mg',
+};
+
 const SORT_OPTIONS = [
   { value: 'default',    label: 'Default order' },
   { value: 'name_asc',  label: 'Name A → Z' },
@@ -41,7 +66,7 @@ function DeleteModal({ item, onConfirm, onCancel, busy }) {
     <Modal open={!!item} onClose={onCancel} title="Remove item?" width={400}>
       <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: 24, lineHeight: 1.6 }}>
         <strong style={{ color: 'var(--text-primary)' }}>{item?.name}</strong> will be permanently
-        removed from your menu and customers won't be able to order it.
+        removed and customers won't be able to order it.
       </p>
       <div style={{ display: 'flex', gap: 10 }}>
         <Button variant="secondary" style={{ flex: 1 }} onClick={onCancel} disabled={busy}>Cancel</Button>
@@ -244,6 +269,8 @@ function IconBtn({ onClick, title, icon: Icon, size, danger }) {
 
 /* ─── Main Page ───────────────────────────────────────────────── */
 export default function MenuPage() {
+  const { tenant } = useAuth();
+  const cfg = getBizConfig(tenant?.businessMode || 'GENERIC');
   const [items, setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -463,15 +490,15 @@ export default function MenuPage() {
   return (
     <div className="fade-in">
       <PageHeader
-        title="Menu & Products"
-        subtitle="Items customers can order via WhatsApp"
-        action={<Button onClick={openNew}><Plus size={15} /> Add Item</Button>}
+        title={cfg.catalog.pageTitle}
+        subtitle={cfg.catalog.pageSubtitle}
+        action={<Button onClick={openNew}><Plus size={15} /> {cfg.catalog.addLabel}</Button>}
       />
 
       {/* Stats strip */}
       {!loading && items.length > 0 && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 22, flexWrap: 'wrap' }}>
-          <StripStat label="Total items" value={items.length} color="var(--primary)" />
+          <StripStat label={`Total ${cfg.catalog.itemLabelPlural}`} value={items.length} color="var(--primary)" />
           <StripStat label="Available" value={totalAvail} color="var(--green)" />
           <StripStat label="Unavailable" value={totalUnavail} color="var(--text-muted)" />
           <StripStat label="Categories" value={allCategories.length} color="var(--blue)" />
@@ -488,7 +515,7 @@ export default function MenuPage() {
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search items…"
+                placeholder={`Search ${cfg.catalog.itemLabelPlural}…`}
                 style={{ paddingLeft: 36 }}
               />
             </div>
@@ -545,17 +572,17 @@ export default function MenuPage() {
       ) : items.length === 0 ? (
         <Card>
           <EmptyState
-            icon={UtensilsCrossed}
-            title="Menu is empty"
-            body="Add items so customers can place orders through your WhatsApp bot"
-            action={<Button onClick={openNew}><Plus size={15} /> Add First Item</Button>}
+            icon={cfg.catalog.icon}
+            title={cfg.catalog.emptyTitle}
+            body={cfg.catalog.emptyBody}
+            action={<Button onClick={openNew}><Plus size={15} /> {cfg.catalog.addLabel}</Button>}
           />
         </Card>
       ) : displayed.length === 0 ? (
         <Card>
           <EmptyState
             icon={Search}
-            title="No items match your filters"
+            title={`No ${cfg.catalog.itemLabelPlural} match your filters`}
             body="Try a different search term or clear your filters"
             action={
               <Button variant="secondary" onClick={() => { setSearch(''); setFilterCat(''); setFilterAvail(''); setSort('default'); }}>
@@ -594,17 +621,17 @@ export default function MenuPage() {
       <Modal
         open={modal}
         onClose={() => { if (!isBusy) { setModal(false); resetModal(); } }}
-        title={editing ? 'Edit Menu Item' : 'Add Menu Item'}
+        title={editing ? `Edit ${cfg.catalog.itemLabel.charAt(0).toUpperCase() + cfg.catalog.itemLabel.slice(1)}` : cfg.catalog.addLabel}
         width={540}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Name + Price */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <Field label="Item name" required>
+            <Field label={`${cfg.catalog.itemLabel.charAt(0).toUpperCase() + cfg.catalog.itemLabel.slice(1)} name`} required>
               <input
                 value={form.name}
                 onChange={e => set('name', e.target.value)}
-                placeholder="Grilled Chicken"
+                placeholder={NAME_PLACEHOLDER[tenant?.businessMode] || 'Item name'}
                 autoFocus
               />
             </Field>
@@ -626,7 +653,7 @@ export default function MenuPage() {
               list="category-list"
               value={form.category}
               onChange={e => set('category', e.target.value)}
-              placeholder="Mains, Drinks, Snacks…"
+              placeholder={cfg.catalog.categoryPlaceholder}
             />
             <datalist id="category-list">
               {allCategories.map(c => <option key={c} value={c} />)}
@@ -638,7 +665,7 @@ export default function MenuPage() {
             <textarea
               value={form.description}
               onChange={e => set('description', e.target.value)}
-              placeholder="Short description shown to customers…"
+              placeholder={DESC_PLACEHOLDER[tenant?.businessMode] || 'Short description shown to customers…'}
               style={{ minHeight: 66 }}
             />
           </Field>

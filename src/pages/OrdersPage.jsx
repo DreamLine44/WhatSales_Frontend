@@ -9,6 +9,7 @@ import {
   ConfirmModal
 } from '../components/ui/index.jsx';
 import toast from 'react-hot-toast';
+import { getBizConfig } from '../utils/businessConfig';
 import { useLocation } from 'react-router-dom';
 import { format } from 'date-fns';
 
@@ -27,6 +28,7 @@ const FILTERS = [
 export default function OrdersPage() {
   const location = useLocation();
   const { tenant } = useAuth();
+  const cfg = getBizConfig(tenant?.businessMode || 'GENERIC');
   const currency = tenant?.payment?.currency;
 
   const rawUrlFilter = new URLSearchParams(location.search).get('filter') || '';
@@ -125,8 +127,8 @@ export default function OrdersPage() {
   return (
     <div className="fade-in">
       <PageHeader
-        title="Orders"
-        subtitle="Manage customer orders and payment verification"
+        title={cfg.transactions.ordersPageTitle || "Orders"}
+        subtitle={cfg.transactions.ordersSubtitle || "Manage customer orders"}
       />
 
       <Card style={{ marginBottom: 20, padding: '14px 18px' }}>
@@ -143,7 +145,7 @@ export default function OrdersPage() {
 
       <Card padding="0">
         {loading ? <Spinner /> : data.length === 0 ? (
-          <EmptyState icon={Package} title="No orders found" body="Orders placed via WhatsApp will appear here" />
+          <EmptyState icon={Package} title={`No ${(cfg.transactions.ordersNavLabel || "orders").toLowerCase()} found`} body={cfg.transactions.emptyOrdersBody || "Orders placed via WhatsApp will appear here"} />
         ) : (
           <Table headers={['Ref', 'Customer', 'Item', 'Qty', 'Total', 'Status', 'Date', 'Actions']}>
             {data.map(order => (
@@ -192,7 +194,7 @@ export default function OrdersPage() {
         {selected && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <DetailRow label="Customer"    value={selected.customerPhone} />
-            <DetailRow label="Item"        value={`${selected.item} × ${selected.quantity}`} />
+            <DetailRow label={cfg.transactions.orderItemLabel || "Item"}        value={`${selected.item} × ${selected.quantity}`} />
             <DetailRow label="Total"       value={formatCurrency(selected.totalPrice, currency)} />
             <DetailRow label="Status"      value={<OrderStatusBadge status={selected.status} paymentStatus={selected.paymentStatus} />} />
             <DetailRow label="Reviewed by" value={selected.paymentReviewedBy || 'Not reviewed'} />

@@ -1,27 +1,41 @@
 /**
  * FAQPage — FAQ / Auto-reply management
  *
- * Backend: GET/POST/PATCH/DELETE /dashboard/:tenantId/faqs
- * Response key: { faq: [...], count }  ← singular "faq" not "faqs"
+ * FAQs are exact-match trigger→reply pairs.
+ * When a customer message matches a trigger, the bot replies instantly,
+ * bypassing the AI entirely.
+ *
+ * This page also supports bulk-importing the default FAQ set for the
+ * tenant's business mode via one click.
  */
 import { useEffect, useState } from 'react';
-import { HelpCircle, Plus, Pencil, Trash2, MessageSquare, Zap } from 'lucide-react';
+import { Plus, Pencil, Trash2, Sparkles } from 'lucide-react';
 import { faqs as faqsApi } from '../services/api';
+import { useAuth } from '../store/AuthContext';
+import { getDefaultFlow } from '../data/defaultFlows';
+import { getBizConfig } from '../utils/businessConfig';
 import {
-  PageHeader, Card, Button, Field, EmptyState, Spinner, Modal, Badge, ConfirmModal
+  PageHeader, Card, Button, Field, EmptyState, Spinner,
+  Modal, Table, Tr, Td, Badge, ConfirmModal
 } from '../components/ui/index.jsx';
 import toast from 'react-hot-toast';
 
 const BLANK = { trigger: '', reply: '' };
 
 export default function FAQPage() {
+  const { tenant } = useAuth();
+  const businessMode = tenant?.businessMode || 'GENERIC';
+  const cfg = getBizConfig(businessMode);
+
   const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal]     = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm]       = useState(BLANK);
   const [saving, setSaving]   = useState(false);
+  const [importing, setImporting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null, trigger: '', loading: false });
+  const [importConfirm, setImportConfirm] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -35,14 +49,9 @@ export default function FAQPage() {
   useEffect(() => { load(); }, []);
 
   const closeModal = () => { setModal(false); setEditing(null); setForm(BLANK); };
-  const openNew = () => { setEditing(null); setForm(BLANK); setModal(true); };
-  const openEdit = (item) => {
-    setEditing(item);
-    setForm({ trigger: item.trigger, reply: item.reply });
-    setModal(true);
-  };
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const openNew    = () => { setEditing(null); setForm(BLANK); setModal(true); };
+  const openEdit   = (item) => { setEditing(item); setForm({ trigger: item.trigger, reply: item.reply }); setModal(true); };
+  const set        = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const save = async () => {
     if (!form.trigger.trim()) { toast.error('Trigger phrase is required'); return; }
@@ -51,22 +60,21 @@ export default function FAQPage() {
     try {
       if (editing) {
         await faqsApi.update(editing._id, form);
-        toast.success('FAQ updated ✅');
+        toast.success('FAQ updated');
       } else {
         await faqsApi.create(form);
-        toast.success('FAQ added ✅');
+        toast.success('FAQ added');
       }
       closeModal();
       load();
     } catch (err) {
-      toast.error(err.response?.data?.error || err.response?.data?.message || 'Save failed');
-    } finally { setSaving(false); }
+      toast.error(err.response?.data?.message || 'Failed to save FAQ');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const remove = (id, trigger) => {
-    setDeleteConfirm({ open: true, id, trigger, loading: false });
-  };
-
+  const remove = (id, trigger) => setDeleteConfirm({ open: true, id, trigger, loading: false });
   const removeConfirmed = async () => {
     setDeleteConfirm(s => ({ ...s, loading: true }));
     try {
@@ -80,134 +88,170 @@ export default function FAQPage() {
     }
   };
 
+  // Bulk import default FAQs — skips any triggers already in the list
+  const importDefaults = async () => {
+    setImportConfirm(false);
+    setImporting(true);
+    const flow = getDefaultFlow(businessMode);
+    const existing = new Set(items.map(i => i.trigger.toLowerCase().trim()));
+    const toAdd = flow.faqs.filter(f => !existing.has(f.trigger.toLowerCase()));
+
+    if (toAdd.length === 0) {
+      toast('All default FAQs are already in your list! ✅');
+      setImporting(false);
+      return;
+    }
+
+    let added = 0;
+    let failed = 0;
+    for (const faq of toAdd) {
+      try {
+        await faqsApi.create(faq);
+        added++;
+      } catch {
+        failed++;
+      }
+    }
+
+    if (added > 0) toast.success(`Added ${added} default FAQ${added > 1 ? 's' : ''} ✅${failed > 0 ? ` (${failed} failed)` : ''}`);
+    else toast.error('Import failed — please try again');
+    setImporting(false);
+    load();
+  };
+
+  const flow = getDefaultFlow(businessMode);
+  const existingTriggers = new Set(items.map(i => i.trigger.toLowerCase().trim()));
+  const newDefaultCount = flow.faqs.filter(f => !existingTriggers.has(f.trigger.toLowerCase())).length;
+
+  if (loading) return <Spinner />;
+
   return (
     <div className="fade-in">
       <PageHeader
-        title="FAQ / Auto-replies"
-        subtitle="Keyword triggers that the bot replies to instantly — bypassing the AI"
-        action={<Button onClick={openNew}><Plus size={15} /> Add FAQ</Button>}
+        title="Auto-Replies (FAQs)"
+        subtitle="Trigger phrases the bot instantly replies to — no AI needed"
+        action={
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {newDefaultCount > 0 && (
+              <Button variant="secondary" loading={importing} onClick={() => setImportConfirm(true)}>
+                <Sparkles size={14} /> {cfg.faq.importLabel} ({newDefaultCount} new)
+              </Button>
+            )}
+            <Button onClick={openNew}><Plus size={15} /> Add FAQ</Button>
+          </div>
+        }
       />
 
-      {/* Info banner */}
-      <Card style={{ marginBottom: 24, background: 'var(--blue-dim)', border: '1px solid rgba(59,130,246,0.2)', padding: '14px 18px' }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <Zap size={16} color="var(--blue)" style={{ flexShrink: 0, marginTop: 1 }} />
-          <div style={{ fontSize: '0.87rem', color: 'var(--blue)', lineHeight: 1.6 }}>
-            <strong>How FAQs work:</strong> When a customer message matches a trigger phrase exactly (case-insensitive),
-            the bot replies immediately with your configured reply — no AI or flow processing happens.
-            Use this for common questions like "opening hours", "location", "price list", etc.
-          </div>
-        </div>
-      </Card>
+      {/* First-time empty state with template CTA */}
+      {items.length === 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Card style={{ background: 'var(--primary-dim)', border: '1.5px solid rgba(30,138,66,0.25)', textAlign: 'center', padding: '32px 24px' }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>🤖</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1.05rem', color: 'var(--primary)', marginBottom: 8 }}>
+              No auto-replies yet
+            </div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.6, maxWidth: 380, margin: '0 auto 20px' }}>
+              Import <strong>{flow.faqs.length} ready-made {flow.label} replies</strong> — {cfg.faq.importHint}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Button loading={importing} onClick={() => importDefaults()}>
+                <Sparkles size={14} /> {cfg.faq.importLabel}
+              </Button>
+              <Button variant="secondary" onClick={openNew}>
+                <Plus size={14} /> Add manually
+              </Button>
+            </div>
+          </Card>
 
-      {loading ? <Spinner /> : items.length === 0 ? (
-        <Card>
-          <EmptyState
-            icon={HelpCircle}
-            title="No FAQs configured"
-            body="Add trigger phrases and replies to handle common customer questions automatically"
-            action={<Button onClick={openNew}><Plus size={15} /> Add First FAQ</Button>}
-          />
-        </Card>
+          {/* Preview of what will be imported */}
+          <Card>
+            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.9rem', marginBottom: 12, color: 'var(--text-secondary)' }}>
+              Preview — {flow.faqs.length} auto-replies included in the {flow.label} template:
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {flow.faqs.map(f => (
+                <span key={f.trigger} style={{
+                  padding: '4px 10px', borderRadius: 'var(--radius-pill)',
+                  background: 'var(--bg-overlay)', border: '1px solid var(--border)',
+                  fontSize: '0.78rem', fontFamily: 'monospace', color: 'var(--text-secondary)',
+                }}>
+                  {f.trigger}
+                </span>
+              ))}
+            </div>
+          </Card>
+        </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {items.map((item, idx) => (
-            <Card key={item._id} style={{ padding: '18px 20px' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-                {/* Index badge */}
-                <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--primary-dim)', border: '1.5px solid var(--border-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
-                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--primary)' }}>{idx + 1}</span>
-                </div>
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  {/* Trigger */}
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
-                      <Badge label="Trigger" color="blue" />
-                    </div>
-                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', background: 'var(--bg-overlay)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontFamily: 'monospace' }}>
+        <>
+          {/* Has items — show list */}
+          <Card padding="0">
+            <Table headers={['Trigger', 'Reply preview', 'Actions']}>
+              {items.map(item => (
+                <Tr key={item._id}>
+                  <Td>
+                    <code style={{
+                      background: 'var(--bg-overlay)', padding: '2px 8px',
+                      borderRadius: 'var(--radius-sm)', fontFamily: 'monospace',
+                      fontSize: '0.83rem', color: 'var(--primary)',
+                      border: '1px solid var(--border)',
+                    }}>
                       {item.trigger}
-                    </div>
-                  </div>
-
-                  {/* Reply */}
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
-                      <Badge label="Reply" color="green" />
-                    </div>
-                    <div style={{ background: 'var(--green-dim)', border: '1px solid rgba(37,162,68,0.2)', borderRadius: '0 12px 12px 12px', padding: '10px 14px', fontSize: '0.88rem', color: 'var(--text-primary)', lineHeight: 1.55, whiteSpace: 'pre-wrap', maxWidth: 560, position: 'relative' }}>
-                      <div style={{ position: 'absolute', top: 0, left: -8, width: 0, height: 0, borderTop: '8px solid rgba(37,162,68,0.2)', borderLeft: '8px solid transparent' }} />
+                    </code>
+                  </Td>
+                  <Td style={{ maxWidth: 280 }}>
+                    <span style={{ fontSize: '0.83rem', color: 'var(--text-secondary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                       {item.reply}
+                    </span>
+                  </Td>
+                  <Td>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <Button size="sm" variant="ghost" onClick={() => openEdit(item)}>
+                        <Pencil size={13} /> Edit
+                      </Button>
+                      <Button size="sm" variant="danger" onClick={() => remove(item._id, item.trigger)}>
+                        <Trash2 size={13} />
+                      </Button>
                     </div>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  <button
-                    onClick={() => openEdit(item)}
-                    title="Edit"
-                    style={{ background: 'var(--bg-overlay)', color: 'var(--text-muted)', padding: '7px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    onClick={() => remove(item._id, item.trigger)}
-                    title="Delete"
-                    style={{ background: 'var(--red-dim)', color: 'var(--red)', padding: '7px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', border: '1px solid rgba(229,62,62,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
+                  </Td>
+                </Tr>
+              ))}
+            </Table>
+          </Card>
+        </>
       )}
 
       {/* Add / Edit modal */}
-      <Modal open={modal} onClose={closeModal} title={editing ? 'Edit FAQ' : 'Add FAQ'} width={520}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <Modal open={modal} onClose={closeModal} title={editing ? 'Edit Auto-Reply' : 'Add Auto-Reply'} width={480}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Field
             label="Trigger phrase"
             required
-            hint='The exact phrase (case-insensitive) a customer must send. E.g. "opening hours", "where are you", "price list"'
+            hint="When a customer sends this exact word or phrase, the bot replies instantly. E.g: 'menu', 'price', 'hi', 'location'"
           >
             <input
               value={form.trigger}
               onChange={e => set('trigger', e.target.value)}
-              placeholder="opening hours"
+              placeholder="e.g. menu"
+              style={{ fontFamily: 'monospace' }}
+              onKeyDown={e => { if (e.key === 'Enter') save(); }}
             />
           </Field>
-
-          <Field
-            label="Bot reply"
-            required
-            hint="What the bot sends back when the trigger matches. Emoji are supported."
-          >
+          <Field label="Bot reply" required hint="What the bot sends back when this trigger is matched.">
             <textarea
               value={form.reply}
               onChange={e => set('reply', e.target.value)}
-              placeholder="🕐 We're open Monday–Saturday, 9am–9pm. Closed Sundays."
-              style={{ minHeight: 100 }}
+              placeholder="e.g. 🍽️ Here's our menu! Type *order* to place an order..."
+              style={{ minHeight: 110 }}
             />
           </Field>
-
-          {/* Live preview */}
           {form.reply && (
             <div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 8 }}>Preview</div>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <MessageSquare size={14} color="#fff" />
-                </div>
-                <div style={{ background: 'var(--green-dim)', border: '1px solid rgba(37,162,68,0.2)', borderRadius: '0 12px 12px 12px', padding: '10px 14px', fontSize: '0.87rem', lineHeight: 1.55, whiteSpace: 'pre-wrap', flex: 1 }}>
-                  {form.reply}
-                </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 6, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Preview</div>
+              <div style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border)', borderRadius: '0 12px 12px 12px', padding: '10px 14px', fontSize: '0.87rem', lineHeight: 1.55, whiteSpace: 'pre-wrap', maxWidth: 380 }}>
+                {form.reply}
               </div>
             </div>
           )}
-
           <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
             <Button variant="secondary" onClick={closeModal}>Cancel</Button>
             <Button style={{ flex: 1 }} loading={saving} onClick={save}>
@@ -217,16 +261,28 @@ export default function FAQPage() {
         </div>
       </Modal>
 
-      {/* Delete confirm modal — must be inside the root return element */}
+      {/* Delete confirm */}
       <ConfirmModal
         open={deleteConfirm.open}
         onClose={() => setDeleteConfirm({ open: false, id: null, trigger: '', loading: false })}
         onConfirm={removeConfirmed}
         loading={deleteConfirm.loading}
-        title="Remove FAQ"
-        message={`Remove FAQ for "${deleteConfirm.trigger}"? This cannot be undone.`}
+        title="Remove Auto-Reply"
+        message={`Remove the auto-reply for "${deleteConfirm.trigger}"?`}
         confirmLabel="Remove"
         variant="danger"
+      />
+
+      {/* Import confirm */}
+      <ConfirmModal
+        open={importConfirm}
+        onClose={() => setImportConfirm(false)}
+        onConfirm={importDefaults}
+        loading={importing}
+        title={`Import ${flow.label} Defaults`}
+        message={`This will add ${newDefaultCount} default auto-repl${newDefaultCount === 1 ? 'y' : 'ies'} for a ${flow.label} business. Existing FAQs won't be changed.`}
+        confirmLabel="Import"
+        variant="primary"
       />
     </div>
   );

@@ -1,27 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Building2, Save } from 'lucide-react';
+import { Building2, Save, Zap, Package } from 'lucide-react';
 import { business as businessApi } from '../services/api';
 import {
   PageHeader, Card, Button, Field, SectionTitle, Grid, Spinner, Toggle
 } from '../components/ui/index.jsx';
 import toast from 'react-hot-toast';
-
-// Business modes mirror backend getModeConfig() values used in moduleRouter, webhookController
-// Matches MODE_MAP keys in backend src/config/modes.js (excludes FOOD/CAFE aliases)
-// Valid backend enum values only — from tenantController.js VALID_MODES
-const MODES = [
-  { value: 'RESTAURANT',  label: '🍽 Restaurant',   desc: 'Food ordering & table bookings' },
-  { value: 'BAKERY',      label: '🎂 Bakery',        desc: 'Custom cake & pastry orders' },
-  { value: 'SALON',       label: '✂️ Salon / Spa',  desc: 'Appointment bookings & services' },
-  { value: 'BARBERSHOP',  label: '💈 Barbershop',    desc: 'Haircut bookings & services' },
-  { value: 'FASHION',     label: '👗 Fashion',       desc: 'Clothing & accessories orders' },
-  { value: 'RETAIL',      label: '🛍 Retail',        desc: 'General retail & shop orders' },
-  { value: 'COSMETICS',   label: '💄 Cosmetics',     desc: 'Beauty products & orders' },
-  { value: 'ELECTRONICS', label: '🔌 Electronics',   desc: 'Electronics & gadget orders' },
-  { value: 'SUPERMARKET', label: '🛒 Supermarket',   desc: 'Grocery & supermarket orders' },
-  { value: 'PHARMACY',    label: '💊 Pharmacy',      desc: 'Pharmacy & health products' },
-  { value: 'DELIVERY',    label: '🚚 Delivery',      desc: 'Delivery & logistics service' },
-];
+import { BUSINESS_MODES } from '../utils/businessConfig';
 
 export default function BusinessSetupPage() {
   const [form, setForm]     = useState({ name: '', adminPhone: '', businessMode: '', description: '' });
@@ -99,25 +83,69 @@ export default function BusinessSetupPage() {
           >
             Business Mode
           </SectionTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
-            {MODES.map(m => (
-              <div
-                key={m.value}
-                onClick={() => set('businessMode', m.value)}
-                style={{
-                  padding: '14px 16px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
-                  border: `1px solid ${form.businessMode === m.value ? 'var(--primary)' : 'var(--border)'}`,
-                  background: form.businessMode === m.value ? 'var(--primary-dim)' : 'var(--bg-overlay)',
-                  transition: 'all 0.15s',
-                }}
-              >
-                <div style={{ fontSize: '1rem', marginBottom: 4 }}>{m.label}</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{m.desc}</div>
-                {form.businessMode === m.value && (
-                  <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 700 }}>● Selected</div>
-                )}
-              </div>
-            ))}
+
+          {/* Full-flow modes */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Zap size={13} color="var(--primary)" />
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Full AI Flow
+              </span>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 400 }}>— dedicated bot module with smart conversation flow</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
+              {BUSINESS_MODES.filter(m => m.tier === 'full').map(m => (
+                <div
+                  key={m.value}
+                  onClick={() => set('businessMode', m.value)}
+                  style={{
+                    padding: '14px 16px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                    border: `1px solid ${form.businessMode === m.value ? 'var(--primary)' : 'var(--border)'}`,
+                    background: form.businessMode === m.value ? 'var(--primary-dim)' : 'var(--bg-overlay)',
+                    transition: 'all 0.15s',
+                    position: 'relative',
+                  }}
+                >
+                  <div style={{ fontSize: '1rem', marginBottom: 4 }}>{m.label}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{m.desc}</div>
+                  {form.businessMode === m.value && (
+                    <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 700 }}>● Selected</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Basic modes */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Package size={13} color="var(--text-muted)" />
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Basic Flow
+              </span>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 400 }}>— standard order flow, no custom bot module</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
+              {BUSINESS_MODES.filter(m => m.tier === 'basic').map(m => (
+                <div
+                  key={m.value}
+                  onClick={() => set('businessMode', m.value)}
+                  style={{
+                    padding: '14px 16px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                    border: `1px solid ${form.businessMode === m.value ? 'var(--primary)' : 'var(--border)'}`,
+                    background: form.businessMode === m.value ? 'var(--primary-dim)' : 'var(--bg-overlay)',
+                    transition: 'all 0.15s',
+                    opacity: 0.85,
+                  }}
+                >
+                  <div style={{ fontSize: '1rem', marginBottom: 4 }}>{m.label}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{m.desc}</div>
+                  {form.businessMode === m.value && (
+                    <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 700 }}>● Selected</div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </Card>
 

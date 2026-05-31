@@ -1,26 +1,15 @@
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import {
-  LayoutDashboard, ShoppingCart, CalendarCheck, UtensilsCrossed,
-  Scissors, MessageSquare, BarChart3, Wifi, Clock,
-  Bot, Building2, Menu, X, LogOut, Users, HelpCircle, Zap
+  LayoutDashboard, ShoppingCart, CalendarCheck,
+  MessageSquare, BarChart3, Wifi, Clock,
+  Bot, Building2, Menu, X, LogOut, Users, HelpCircle,
 } from 'lucide-react';
 import { useAuth } from '../../store/AuthContext';
 import { WhatsalesLogo } from '../../App';
+import { getBizConfig, getNavVisibility } from '../../utils/businessConfig';
 import toast from 'react-hot-toast';
 import styles from './DashboardLayout.module.css';
-
-const NAV_MAIN = [
-  { to: '/dashboard',  icon: LayoutDashboard, label: 'Dashboard'    },
-  { to: '/orders',     icon: ShoppingCart,    label: 'Orders'       },
-  { to: '/bookings',   icon: CalendarCheck,   label: 'Bookings'     },
-  { to: '/menu',       icon: UtensilsCrossed, label: 'Menu'         },
-  { to: '/services',   icon: Scissors,        label: 'Services'     },
-  { to: '/sessions',   icon: MessageSquare,   label: 'Live Sessions' },
-  { to: '/analytics',  icon: BarChart3,       label: 'Analytics'    },
-  { to: '/customers',  icon: Users,           label: 'Customers'    },
-  { to: '/faqs',       icon: HelpCircle,      label: 'FAQs'         },
-];
 
 const NAV_SETUP = [
   { to: '/setup/business', icon: Building2, label: 'Business Info' },
@@ -41,16 +30,22 @@ export default function DashboardLayout() {
   };
 
   const bizName = tenant?.name || user?.name || 'My Business';
-  const mode = tenant?.businessMode || '';
+  const mode    = tenant?.businessMode || 'GENERIC';
+  const cfg     = getBizConfig(mode);
+  const vis     = getNavVisibility(mode);
 
-  // Filter nav items based on business mode so tenants don't see dead sections
-  const filteredNav = NAV_MAIN.filter(({ to }) => {
-    if (to === '/menu'     && mode === 'SALON')       return false;
-    if (to === '/services' && mode === 'RESTAURANT')  return false;
-    if (to === '/orders'   && mode === 'SALON')       return false;
-    if (to === '/bookings' && mode === 'RESTAURANT')  return false;
-    return true;
-  });
+  // Build dynamic main nav from business mode config
+  const NAV_MAIN = [
+    { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', show: true },
+    { to: '/orders',    icon: ShoppingCart,    label: cfg.transactions.ordersNavLabel  || 'Orders',   show: vis.showOrders   },
+    { to: '/bookings',  icon: CalendarCheck,   label: cfg.transactions.bookingsNavLabel || 'Bookings', show: vis.showBookings },
+    { to: '/menu',      icon: cfg.catalog.icon, label: cfg.catalog.navLabel,   show: vis.showMenu     },
+    { to: '/services',  icon: cfg.catalog.icon, label: cfg.catalog.navLabel,   show: vis.showServices },
+    { to: '/sessions',  icon: MessageSquare,   label: 'Live Sessions', show: true },
+    { to: '/analytics', icon: BarChart3,       label: 'Analytics',     show: true },
+    { to: '/customers', icon: Users,           label: 'Customers',     show: true },
+    { to: '/faqs',      icon: HelpCircle,      label: 'Auto-Replies',  show: true },
+  ].filter(n => n.show);
 
   return (
     <div className={styles.root}>
@@ -73,10 +68,31 @@ export default function DashboardLayout() {
           </button>
         </div>
 
+        {/* Business mode badge */}
+        <div style={{
+          margin: '0 12px 8px',
+          padding: '6px 10px',
+          background: 'rgba(255,255,255,0.05)',
+          borderRadius: 8,
+          fontSize: '0.75rem',
+          color: 'rgba(255,255,255,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}>
+          <span>{cfg.emoji}</span>
+          <span style={{ flex: 1 }}>{cfg.label}</span>
+          {cfg.tier === 'basic' && (
+            <span style={{ fontSize: '0.62rem', fontWeight: 700, background: 'rgba(255,255,255,0.1)', borderRadius: 4, padding: '1px 5px', color: 'rgba(255,255,255,0.35)', letterSpacing: '0.05em' }}>
+              BASIC
+            </span>
+          )}
+        </div>
+
         <nav className={styles.nav}>
           <div className={styles.navSection}>
             <span className={styles.navLabel}>Main</span>
-            {filteredNav.map(({ to, icon: Icon, label }) => (
+            {NAV_MAIN.map(({ to, icon: Icon, label }) => (
               <NavLink
                 key={to} to={to}
                 className={({ isActive }) => `${styles.navItem} ${isActive ? styles.navActive : ''}`}

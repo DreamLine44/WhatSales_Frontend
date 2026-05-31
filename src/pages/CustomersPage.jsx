@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Users, Search, Phone, ShoppingCart, Clock } from 'lucide-react';
 import { customers as customersApi, orders as ordersApi } from '../services/api';
+import { useAuth } from '../store/AuthContext';
 import {
   PageHeader, Card, Table, Tr, Td, Button, EmptyState,
   Spinner, Modal, Badge, StatCard, Grid
 } from '../components/ui/index.jsx';
 import toast from 'react-hot-toast';
+import { getBizConfig } from '../utils/businessConfig';
 import { formatDistanceToNow, format } from 'date-fns';
 
 export default function CustomersPage() {
+  const { tenant } = useAuth();
+  const cfg = getBizConfig(tenant?.businessMode || 'GENERIC');
   const [data, setData]       = useState([]);
   const [total, setTotal]     = useState(0);
   const [page, setPage]       = useState(1);
@@ -190,16 +194,16 @@ export default function CustomersPage() {
                 </div>
               )}
 
-              {/* Order history */}
+              {/* Order / appointment history */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                   <ShoppingCart size={15} color="var(--primary)" />
-                  <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.95rem' }}>Recent Orders</span>
+                  <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.95rem' }}>Recent {cfg.customers?.orderHistoryLabel || cfg.transactions.ordersNavLabel || 'Orders'}</span>
                 </div>
                 {histLoading ? (
                   <Spinner size={20} />
                 ) : history.length === 0 ? (
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '16px 0' }}>No orders yet</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '16px 0' }}>No {(cfg.customers?.orderHistoryLabel || cfg.transactions.ordersNavLabel || 'orders').toLowerCase()} yet</div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {history.map(o => (

@@ -508,10 +508,6 @@ export const adminApi = {
   deleteTenant: (id) =>
     axios.delete(`${BASE_URL}/admin/tenants/${id}`, { headers: adminHeaders() }),
 
-  // Update tenant status specifically (uses dedicated /status route)
-  updateTenantStatus: (id, status) =>
-    axios.patch(`${BASE_URL}/admin/tenants/${id}/status`, { status }, { headers: adminHeaders() }),
-
   // Regenerate API key for a tenant
   regenerateKey: (id) =>
     axios.post(`${BASE_URL}/admin/tenants/${id}/regenerate-key`, {}, { headers: adminHeaders() }),

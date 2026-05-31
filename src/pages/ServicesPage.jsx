@@ -5,10 +5,14 @@ import {
   PageHeader, Card, Button, Field, EmptyState, Spinner, Modal, Grid, Badge, SectionTitle, ConfirmModal
 } from '../components/ui/index.jsx';
 import toast from 'react-hot-toast';
+import { useAuth } from '../store/AuthContext';
+import { getBizConfig } from '../utils/businessConfig';
 
 const BLANK = { name: '', description: '', duration: 60, price: '', category: '', available: true };
 
 export default function ServicesPage() {
+  const { tenant } = useAuth();
+  const cfg = getBizConfig(tenant?.businessMode || 'GENERIC');
   const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal]     = useState(false);
@@ -76,9 +80,9 @@ export default function ServicesPage() {
   return (
     <div className="fade-in">
       <PageHeader
-        title="Services"
-        subtitle="Services available for booking via WhatsApp (used as SVC_0, SVC_1… in the bot flow)"
-        action={<Button onClick={openNew}><Plus size={15} /> Add Service</Button>}
+        title={cfg.catalog.pageTitle}
+        subtitle={cfg.catalog.pageSubtitle}
+        action={<Button onClick={openNew}><Plus size={15} /> {cfg.catalog.addLabel}</Button>}
       />
 
       {/* Info banner — explains the SVC_N ID system to business owners */}
@@ -95,10 +99,10 @@ export default function ServicesPage() {
       {loading ? <Spinner /> : items.length === 0 ? (
         <Card>
           <EmptyState
-            icon={Scissors}
-            title="No services yet"
-            body="Add services so customers can book appointments through WhatsApp"
-            action={<Button onClick={openNew}><Plus size={15} /> Add First Service</Button>}
+            icon={cfg.catalog.icon}
+            title={cfg.catalog.emptyTitle}
+            body={cfg.catalog.emptyBody}
+            action={<Button onClick={openNew}><Plus size={15} /> {cfg.catalog.addLabel}</Button>}
           />
         </Card>
       ) : (
@@ -109,10 +113,12 @@ export default function ServicesPage() {
         </Grid>
       )}
 
-      <Modal open={modal} onClose={() => setModal(false)} title={editing ? 'Edit Service' : 'Add Service'} width={460}>
+      <Modal open={modal} onClose={() => setModal(false)} title={editing ? `Edit ${cfg.catalog.itemLabel.charAt(0).toUpperCase() + cfg.catalog.itemLabel.slice(1)}` : cfg.catalog.addLabel} width={460}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Field label="Service name" required>
-            <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="Haircut & Style" />
+            <input value={form.name} onChange={e => set('name', e.target.value)} placeholder={
+              { SALON: 'e.g. Haircut & Blow-dry', BARBERSHOP: 'e.g. Fade + Beard Trim', DELIVERY: 'e.g. Express Delivery (Same Day)', COSMETICS: 'e.g. Skin Consultation' }[tenant?.businessMode] || 'Service name'
+            } />
           </Field>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <Field label="Price (D)">
@@ -123,7 +129,7 @@ export default function ServicesPage() {
             </Field>
           </div>
           <Field label="Category">
-            <input value={form.category} onChange={e => set('category', e.target.value)} placeholder="Hair, Nails, Skin…" />
+            <input value={form.category} onChange={e => set('category', e.target.value)} placeholder={cfg.catalog.categoryPlaceholder} />
           </Field>
           <Field label="Description">
             <textarea value={form.description} onChange={e => set('description', e.target.value)} placeholder="Short description for customers…" style={{ minHeight: 72 }} />
@@ -135,7 +141,7 @@ export default function ServicesPage() {
           <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
             <Button variant="secondary" onClick={() => setModal(false)}>Cancel</Button>
             <Button style={{ flex: 1 }} loading={saving} onClick={save}>
-              {editing ? 'Save Changes' : 'Add Service'}
+              {editing ? 'Save Changes' : cfg.catalog.addLabel}
             </Button>
           </div>
         </div>
@@ -146,7 +152,7 @@ export default function ServicesPage() {
         onClose={() => setDeleteConfirm({ open: false, id: null, name: '', loading: false })}
         onConfirm={removeConfirmed}
         loading={deleteConfirm.loading}
-        title="Remove Service"
+        title={`Remove ${cfg.catalog.itemLabel.charAt(0).toUpperCase() + cfg.catalog.itemLabel.slice(1)}`}
         message={`Remove "${deleteConfirm.name}"? This cannot be undone.`}
         confirmLabel="Remove"
         variant="danger"

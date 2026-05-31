@@ -9,6 +9,7 @@ import {
   PageHeader, Card, StatCard, Grid, Spinner, SectionTitle
 } from '../components/ui/index.jsx';
 import toast from 'react-hot-toast';
+import { getBizConfig } from '../utils/businessConfig';
 import { useAuth } from '../store/AuthContext';
 import { formatCurrency } from '../utils/currency';
 
@@ -29,6 +30,7 @@ const TIP = {
 
 export default function AnalyticsPage() {
   const { tenant } = useAuth();
+  const cfg = getBizConfig(tenant?.businessMode || 'GENERIC');
   const [period, setPeriod]     = useState('7d');
   const [overview, setOverview] = useState(null);
   const [revenue, setRevenue]   = useState([]);
@@ -102,19 +104,21 @@ export default function AnalyticsPage() {
           color="var(--green)"
         />
         <StatCard
-          label="Total Orders"
+          label={cfg.dashboard.ordersStatLabel}
           value={overview?.totalOrders ?? '—'}
           sub={`Last ${PERIODS.find(p => p.value === period)?.label}`}
           icon={ShoppingCart}
           color="var(--primary)"
         />
-        <StatCard
-          label="Total Bookings"
-          value={overview?.totalBookings ?? '—'}
-          sub={`Last ${PERIODS.find(p => p.value === period)?.label}`}
-          icon={BarChart3}
-          color="var(--blue)"
-        />
+        {(cfg.transactions.type === 'bookings' || cfg.transactions.type === 'both') && (
+          <StatCard
+            label={cfg.dashboard.bookingsStatLabel}
+            value={overview?.totalBookings ?? '—'}
+            sub={`Last ${PERIODS.find(p => p.value === period)?.label}`}
+            icon={BarChart3}
+            color="var(--blue)"
+          />
+        )}
         {/* FIX: totalMessages and conversionRate are not in the backend response.
             Show informative '—' with accurate sub-label instead of misleading metric name. */}
         <StatCard
@@ -192,7 +196,7 @@ export default function AnalyticsPage() {
       {/* Top products + Funnel */}
       <Grid cols={2} minColWidth={280} gap={16}>
         <Card>
-          <SectionTitle sub="Most ordered items">Top Products</SectionTitle>
+          <SectionTitle sub={`Most ordered ${cfg.catalog.itemLabelPlural}`}>Top {cfg.catalog.itemLabelPlural.charAt(0).toUpperCase() + cfg.catalog.itemLabelPlural.slice(1)}</SectionTitle>
           {topProducts.length === 0 ? (
             <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: 40 }}>No order data yet</div>
           ) : (

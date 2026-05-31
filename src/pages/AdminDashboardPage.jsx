@@ -9,6 +9,7 @@ import {
   LogOut, ChevronDown, ChevronUp, Shield, Wifi, AlertTriangle,
   Building2, Key, Hash, X, Loader2, ToggleLeft, ToggleRight,
 } from 'lucide-react';
+import { BUSINESS_MODES } from '../utils/businessConfig';
 
 // ─── Utility ────────────────────────────────────────────────────────────────
 function copyToClipboard(text) {
@@ -173,7 +174,7 @@ function CreateTenantModal({ onClose, onCreated }) {
 
       onCreated(tenant, apiKey);
     } catch (err) {
-      toast.error(err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to create tenant');
+      toast.error(err.message || err.response?.data?.error || err.response?.data?.message || 'Failed to create tenant');
     } finally {
       setLoading(false);
     }
@@ -205,17 +206,16 @@ function CreateTenantModal({ onClose, onCreated }) {
           <div>
             <label style={labelSt}>Business Mode</label>
             <select value={form.businessMode} onChange={e => set('businessMode', e.target.value)} style={{ marginTop: 6, width: '100%', padding: '10px 12px', border: '1.5px solid var(--border)', borderRadius: 8, fontFamily: 'var(--font-body)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-              <option value="RESTAURANT">🍽 Food / Restaurant</option>
-              <option value="BAKERY">🎂 Bakery</option>
-              <option value="SALON">✂️ Salon / Spa</option>
-              <option value="BARBERSHOP">💈 Barbershop</option>
-              <option value="FASHION">👗 Fashion</option>
-              <option value="RETAIL">🛍 Retail</option>
-              <option value="COSMETICS">💄 Cosmetics</option>
-              <option value="ELECTRONICS">🔌 Electronics</option>
-              <option value="SUPERMARKET">🛒 Supermarket</option>
-              <option value="PHARMACY">💊 Pharmacy</option>
-              <option value="DELIVERY">🚚 Delivery</option>
+              <optgroup label="— Full AI Flow (dedicated bot module)">
+                {BUSINESS_MODES.filter(m => m.tier === 'full').map(m => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </optgroup>
+              <optgroup label="— Basic Flow (standard order flow)">
+                {BUSINESS_MODES.filter(m => m.tier === 'basic').map(m => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </optgroup>
             </select>
           </div>
 
@@ -351,17 +351,16 @@ function EditTenantModal({ tenant, onClose, onUpdated }) {
             <div>
               <label style={labelSt}>Business Mode</label>
               <select value={form.businessMode} onChange={e => set('businessMode', e.target.value)} style={{ marginTop: 6, width: '100%', padding: '10px 12px', border: '1.5px solid var(--border)', borderRadius: 8, fontFamily: 'var(--font-body)', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                <option value="RESTAURANT">🍽 Food / Restaurant</option>
-                <option value="BAKERY">🎂 Bakery</option>
-                <option value="SALON">✂️ Salon / Spa</option>
-                <option value="BARBERSHOP">💈 Barbershop</option>
-                <option value="FASHION">👗 Fashion</option>
-                <option value="RETAIL">🛍 Retail</option>
-                <option value="COSMETICS">💄 Cosmetics</option>
-                <option value="ELECTRONICS">🔌 Electronics</option>
-                <option value="SUPERMARKET">🛒 Supermarket</option>
-                <option value="PHARMACY">💊 Pharmacy</option>
-                <option value="DELIVERY">🚚 Delivery</option>
+                <optgroup label="— Full AI Flow">
+                  {BUSINESS_MODES.filter(m => m.tier === 'full').map(m => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="— Basic Flow">
+                  {BUSINESS_MODES.filter(m => m.tier === 'basic').map(m => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </optgroup>
               </select>
             </div>
             <div>
@@ -470,13 +469,12 @@ function TenantRow({ tenant, onDeleted, onUpdated }) {
     setRegenConfirm(false);
     setRegening(true);
     try {
-      // Backend does not expose a /regenerate-key endpoint via the dashboard API.
-      // API key regeneration must be done directly on Railway:
-      // 1. Go to Railway → your backend service → Variables
-      // 2. Delete the tenant from DB and recreate, OR
-      // 3. Manually update apiKey + apiKeyHash in MongoDB Atlas
-      // For now, inform the operator clearly.
-      toast.error('API key regeneration is not available via this dashboard. Delete and recreate the tenant, or update the key directly in MongoDB Atlas.');
+      const res = await adminApi.regenerateKey(tenant._id || tenant.tenantId);
+      // Backend returns { apiKey } or { tenant: { apiKey } } depending on version
+      const key = res.data?.apiKey || res.data?.tenant?.apiKey;
+      if (!key) throw new Error('Backend did not return a new API key');
+      setNewKey(key);
+      toast.success('API key regenerated');
     } finally {
       setRegening(false);
     }
@@ -485,7 +483,7 @@ function TenantRow({ tenant, onDeleted, onUpdated }) {
   const toggleStatus = async () => {
     const next = tenant.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
     try {
-      const res = await adminApi.updateTenantStatus(tenant._id || tenant.tenantId, next);
+      const res = await adminApi.updateTenant(tenant._id || tenant.tenantId, { status: next });
       onUpdated(res.data?.tenant || { ...tenant, status: next });
       toast.success(`Tenant ${next === 'ACTIVE' ? 'activated' : 'deactivated'}`);
     } catch (err) {
