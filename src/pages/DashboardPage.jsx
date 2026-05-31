@@ -61,9 +61,36 @@ export default function DashboardPage() {
 
   if (loading) return <Spinner />;
 
+  const isWAConnected = !!(tenant?.phoneNumberId || tenant?.whatsapp?.phoneNumberId);
+
   return (
     <div className="fade-in">
-      {/* Header */}
+      {/* WhatsApp not configured banner */}
+      {!isWAConnected && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: 'linear-gradient(135deg, rgba(184,109,0,0.08) 0%, rgba(184,109,0,0.04) 100%)',
+          border: '1.5px solid rgba(184,109,0,0.22)',
+          borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: 20,
+          flexWrap: 'wrap', gap: 12,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <AlertCircle size={18} color="var(--amber)" style={{ flexShrink: 0, marginTop: 1 }} />
+            <div>
+              <div style={{ fontWeight: 700, color: 'var(--amber)', fontSize: '0.88rem', marginBottom: 2 }}>WhatsApp not connected yet</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                Your bot won't reply to customers until your WhatsApp number is connected. Contact your WhatSales admin.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/setup/whatsapp')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 14px', fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', flexShrink: 0 }}
+          >
+            View Setup <ArrowRight size={13} />
+          </button>
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--primary-dim)', border: '1.5px solid var(--border-accent)', borderRadius: 99, padding: '4px 12px', marginBottom: 10 }}>

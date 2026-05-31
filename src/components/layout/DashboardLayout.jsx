@@ -3,7 +3,7 @@ import { useState } from 'react';
 import {
   LayoutDashboard, ShoppingCart, CalendarCheck,
   MessageSquare, BarChart3, Wifi, Clock,
-  Bot, Building2, Menu, X, LogOut, Users, HelpCircle,
+  Bot, Building2, Menu, X, LogOut, Users, HelpCircle, Zap,
 } from 'lucide-react';
 import { useAuth } from '../../store/AuthContext';
 import { WhatsalesLogo } from '../../App';
@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import styles from './DashboardLayout.module.css';
 
 const NAV_SETUP = [
+  { to: '/setup/wizard',   icon: Zap,       label: 'Get Started 🚀' },
   { to: '/setup/business', icon: Building2, label: 'Business Info' },
   { to: '/setup/bot',      icon: Bot,       label: 'Bot Messages'  },
   { to: '/setup/hours',    icon: Clock,     label: 'Opening Hours' },

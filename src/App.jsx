@@ -21,6 +21,7 @@ import WhatsAppPage     from './pages/WhatsAppPage';
 import AnalyticsPage    from './pages/AnalyticsPage';
 import CustomersPage    from './pages/CustomersPage';
 import FAQPage          from './pages/FAQPage';
+import SetupWizardPage  from './pages/SetupWizardPage';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -135,6 +136,7 @@ export default function App() {
               <Route path="setup/bot"       element={<BotConfigPage />} />
               <Route path="setup/hours"     element={<HoursPage />} />
               <Route path="setup/whatsapp"  element={<WhatsAppPage />} />
+              <Route path="setup/wizard"    element={<SetupWizardPage />} />
             </Route>
             <Route path="admin" element={
               <ProtectedAdminRoute>
