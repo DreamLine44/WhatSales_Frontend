@@ -141,7 +141,7 @@ export default function DashboardLayout() {
             <Menu size={20} />
           </button>
           <div className={styles.topbarRight}>
-            <StatusBadge tenantStatus={tenant?.status} />
+            <StatusBadge whatsapp={tenant?.whatsapp} />
           </div>
         </header>
 
@@ -153,8 +153,11 @@ export default function DashboardLayout() {
   );
 }
 
-function StatusBadge({ tenantStatus }) {
-  const active = tenantStatus === 'ACTIVE';
+function StatusBadge({ whatsapp }) {
+  // "Bot Active" = WhatsApp is connected and the bot can reply to customers.
+  // This is distinct from tenant account status (ACTIVE/INACTIVE).
+  // Backend fix now returns whatsapp.connected on the business object.
+  const active = !!(whatsapp?.connected || whatsapp?.phoneNumberId);
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 6,

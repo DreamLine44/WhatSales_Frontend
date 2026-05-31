@@ -17,8 +17,9 @@ export function AuthProvider({ children }) {
     authApi.verify()
       .then(({ business, user }) => {
         setUser(user);
-        // business response includes whatsapp.connected so tenant context reflects real connection state
-        setTenant({ tenantId: tid, status: 'ACTIVE', ...business });
+        // Spread business last so backend-provided status and whatsapp fields win.
+        // Do NOT hardcode status:'ACTIVE' here — use whatever the backend returns.
+        setTenant({ tenantId: tid, ...business });
       })
       .catch(() => {
         // On verify failure, explicitly clear React state too.
@@ -35,8 +36,8 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (apiKey, tenantId) => {
     const result = await authApi.login(apiKey, tenantId);
     setUser(result.user);
-    // business response now includes whatsapp.connected + whatsapp.phoneNumberId from backend fix
-    setTenant({ tenantId, status: 'ACTIVE', ...result.business });
+    // Spread business last — backend status and whatsapp.connected fields are authoritative.
+    setTenant({ tenantId, ...result.business });
     return result;
   }, []);
 
