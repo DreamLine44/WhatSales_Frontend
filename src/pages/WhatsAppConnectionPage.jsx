@@ -8,10 +8,12 @@
  */
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  Wifi, Send, CheckCircle2, Clock, Phone, Mail, User,
-  Building2, FileText, AlertTriangle, Loader2, RefreshCw,
+  Wifi, Send, CheckCircle2, Clock,
+  Building2, AlertTriangle, Loader2, RefreshCw,
   MessageSquare, ChevronRight, Zap, Info,
+  Phone, Mail, User,
 } from 'lucide-react';
 import { useWhatsAppOnboarding } from '../hooks/useWhatsAppOnboarding';
 import { BUSINESS_CATEGORIES, ONBOARDING_STATUSES, getStatusMeta } from '../services/whatsappOnboardingApi';
@@ -76,15 +78,6 @@ const ghostBtn = {
   fontSize: '0.85rem',
   cursor: 'pointer',
 };
-
-// ── Timeline steps definition ─────────────────────────────────────────────────
-const TIMELINE_STEPS = [
-  { key: 'PENDING',    label: 'Requested',    desc: 'Your request has been received and is pending review.' },
-  { key: 'CONTACTED',  label: 'Under Review', desc: 'Our team has reviewed your request and will contact you.' },
-  { key: 'CONNECTING', label: 'Contacted',    desc: 'You have been contacted and connection is being set up.' },
-  { key: 'CONNECTING', label: 'Connecting',   desc: 'Your WhatsApp account is being connected.' },
-  { key: 'CONNECTED',  label: 'Connected',    desc: 'Your WhatsApp account is fully connected and active.' },
-];
 
 const STATUS_ORDER = ['PENDING', 'CONTACTED', 'CONNECTING', 'CONNECTED'];
 
@@ -329,15 +322,22 @@ function OnboardingTimeline({ request }) {
   const currentIndex  = STATUS_ORDER.indexOf(currentStatus);
   const isRejected    = currentStatus === 'REJECTED';
 
+  // Each step maps to the STATUS_ORDER index at which it becomes "done".
+  // Steps 0 and 1 both belong to the PENDING phase (index 0), but step 1
+  // ("Under Review") should only light up once we've moved past PENDING.
   const steps = [
-    { label: 'Requested',    desc: 'Request submitted successfully', status: 'PENDING'    },
-    { label: 'Under Review', desc: 'Team is reviewing your request', status: 'PENDING'    },
-    { label: 'Contacted',    desc: 'Team has reached out to you',    status: 'CONTACTED'  },
-    { label: 'Connecting',   desc: 'Setting up WhatsApp credentials', status: 'CONNECTING' },
-    { label: 'Connected',    desc: 'Bot is live and serving customers', status: 'CONNECTED' },
+    { label: 'Requested',    desc: 'Request submitted successfully',      statusIndex: 0, isSecondPending: false },
+    { label: 'Under Review', desc: 'Team is reviewing your request',      statusIndex: 0, isSecondPending: true  },
+    { label: 'Contacted',    desc: 'Team has reached out to you',         statusIndex: 1, isSecondPending: false },
+    { label: 'Connecting',   desc: 'Setting up WhatsApp credentials',     statusIndex: 2, isSecondPending: false },
+    { label: 'Connected',    desc: 'Bot is live and serving customers',   statusIndex: 3, isSecondPending: false },
   ];
 
+  // stepOrder[i] is the STATUS_ORDER key used to look up timeline timestamps
   const stepOrder = ['PENDING', 'PENDING', 'CONTACTED', 'CONNECTING', 'CONNECTED'];
+
+  // Fraction of the progress line to fill (0–1)
+  const progressRatio = currentIndex < 0 ? 0 : currentIndex / (STATUS_ORDER.length - 1);
 
   return (
     <div style={{ ...card, maxWidth: 680, margin: '0 auto 20px' }}>
@@ -354,16 +354,28 @@ function OnboardingTimeline({ request }) {
         </div>
       ) : (
         <div style={{ position: 'relative' }}>
-          {/* Vertical line */}
+          {/* Vertical track (grey) */}
           <div style={{ position: 'absolute', left: 15, top: 16, bottom: 16, width: 2, background: 'var(--border)', zIndex: 0 }} />
+          {/* Vertical fill (green), grows with progress */}
+          <div style={{
+            position: 'absolute', left: 15, top: 16, width: 2, zIndex: 0,
+            background: 'var(--green)',
+            height: `calc(${progressRatio} * (100% - 32px))`,
+            transition: 'height 0.4s ease',
+          }} />
 
           {steps.map((step, i) => {
-            const stepStatusIndex = STATUS_ORDER.indexOf(stepOrder[i]);
-            const isDone   = currentIndex > stepStatusIndex || (currentIndex === stepStatusIndex && i < steps.findIndex(s => s.status === currentStatus));
-            const isActive = !isDone && (stepStatusIndex === currentIndex && i === steps.findIndex((s, idx) => stepOrder[idx] === currentStatus && idx >= steps.findIndex(ss => ss.status === currentStatus)));
-            // simpler: step is done if currentIndex > i's threshold index, active if equal
-            const done   = i < (currentIndex === 0 ? 1 : currentIndex + 1);
-            const active = i === (currentIndex === 0 ? 0 : currentIndex);
+            // "done" rules:
+            //   - isSecondPending (Under Review): only done when we've moved PAST PENDING (index > 0)
+            //   - all other steps: done when currentIndex >= step.statusIndex
+            //     (>= means the current status IS this step or has passed it)
+            const done = step.isSecondPending
+              ? currentIndex > step.statusIndex
+              : currentIndex >= step.statusIndex;
+
+            // "active" = we're exactly at this step's status AND it's not yet done.
+            // isSecondPending is never active (it has no distinct status of its own).
+            const active = !done && !step.isSecondPending && currentIndex === step.statusIndex;
 
             const ts = request?.timeline?.find(t => t.status === stepOrder[i]);
 
@@ -409,6 +421,7 @@ function OnboardingTimeline({ request }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function WhatsAppConnectionPage() {
   const { request, loading, submitting, error, fetchStatus, submitRequest, hasRequest } = useWhatsAppOnboarding();
+  const navigate = useNavigate();
 
   const handleSubmit = async (formData) => {
     const result = await submitRequest(formData);
@@ -472,9 +485,38 @@ export default function WhatsAppConnectionPage() {
           <WhatsAppStatusCard request={request} />
           <OnboardingTimeline request={request} />
 
+          {/* Rejected: show resubmit / support prompt */}
+          {request?.status === 'REJECTED' && (
+            <div style={{ ...card, maxWidth: 680, margin: '0 auto 20px', background: 'var(--red-dim)', border: '1.5px solid rgba(220,53,53,0.2)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                <AlertTriangle size={20} color="var(--red)" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--red)', marginBottom: 4 }}>
+                    Request Rejected
+                  </div>
+                  <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 14 }}>
+                    Your WhatsApp connection request was not approved. Please review the admin note above (if any),
+                    then contact our support team or resubmit with updated details.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <a
+                      href="mailto:support@whatsales.io"
+                      style={{ ...primaryBtn, background: 'var(--red)', textDecoration: 'none' }}
+                    >
+                      Contact Support
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Connected CTA */}
           {request?.status === 'CONNECTED' && (
-            <div style={{ ...card, maxWidth: 680, margin: '0 auto', background: 'var(--green-dim)', border: '1.5px solid rgba(25,163,72,0.2)' }}>
+            <button
+              onClick={() => navigate('/dashboard')}
+              style={{ ...card, maxWidth: 680, margin: '0 auto', background: 'var(--green-dim)', border: '1.5px solid rgba(25,163,72,0.2)', cursor: 'pointer', width: '100%', textAlign: 'left' }}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <CheckCircle2 size={24} color="var(--green)" />
                 <div style={{ flex: 1 }}>
@@ -487,7 +529,7 @@ export default function WhatsAppConnectionPage() {
                 </div>
                 <ChevronRight size={18} color="var(--green)" />
               </div>
-            </div>
+            </button>
           )}
         </>
       )}

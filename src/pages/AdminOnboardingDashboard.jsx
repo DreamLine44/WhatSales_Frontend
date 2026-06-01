@@ -12,7 +12,7 @@
  *  - Connection Panel (save credentials, test connection, mark connected)
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../store/AdminContext';
 import { adminOnboarding, getStatusMeta, ONBOARDING_STATUSES } from '../services/whatsappOnboardingApi';
@@ -20,9 +20,9 @@ import { WhatsalesLogo } from '../App';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft, RefreshCw, Search, X, Loader2, ChevronDown, ChevronUp,
-  LogOut, Shield, Wifi, AlertTriangle, CheckCircle2, Eye,
-  Building2, Phone, Mail, User, FileText, Clock, Key, Hash,
-  Send, Zap, MessageSquare,
+  LogOut, Wifi, AlertTriangle, CheckCircle2, Eye,
+  Building2, User, Key,
+  Zap, MessageSquare,
 } from 'lucide-react';
 
 // ── Shared style atoms ────────────────────────────────────────────────────────
@@ -57,7 +57,6 @@ const ghostBtn = {
 };
 
 const dangerBtn = { ...primaryBtn, background: 'var(--red)' };
-const amberBtn  = { ...primaryBtn, background: 'var(--amber)' };
 
 const modalOverlay = {
   position: 'fixed', inset: 0, background: 'rgba(8,18,12,0.58)',
@@ -74,11 +73,13 @@ const iconBtn = { background: 'none', border: 'none', padding: 4, cursor: 'point
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function useEscapeKey(fn) {
+  const fnRef = useRef(fn);
+  useEffect(() => { fnRef.current = fn; });
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') fn(); };
+    const h = (e) => { if (e.key === 'Escape') fnRef.current(); };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
-  }, [fn]);
+  }, []); // empty deps — handler is stable via ref
 }
 
 function formatDate(iso) {
@@ -135,7 +136,7 @@ function ConnectionTestResult({ result }) {
 }
 
 // ── ConnectionPanel ───────────────────────────────────────────────────────────
-function ConnectionPanel({ request, onConnected }) {
+function ConnectionPanel({ request, adminNotes, onConnected }) {
   const [form, setForm] = useState({ phoneNumberId: '', wabaId: '', accessToken: '', verifyToken: '' });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -173,7 +174,10 @@ function ConnectionPanel({ request, onConnected }) {
   const handleMarkConnected = async () => {
     setMarking(true);
     try {
-      await adminOnboarding.updateStatus(request._id, { status: 'CONNECTED', adminNotes: 'WhatsApp successfully connected.' });
+      await adminOnboarding.updateStatus(request._id, {
+        status: 'CONNECTED',
+        adminNotes: adminNotes || 'WhatsApp successfully connected.',
+      });
       toast.success('Marked as Connected');
       onConnected?.();
     } catch (err) {
@@ -231,8 +235,17 @@ function AdminConnectionModal({ request: initialRequest, onClose, onUpdated }) {
   const [status, setStatus]     = useState(initialRequest?.status || 'PENDING');
   const [adminNotes, setAdminNotes] = useState(initialRequest?.adminNotes || '');
   const [saving, setSaving]     = useState(false);
+  const [rejecting, setRejecting] = useState(false);
   const [showConnect, setShowConnect] = useState(false);
   useEscapeKey(onClose);
+
+  // Bug 4 fix: re-sync status & notes if the request prop changes externally
+  // (e.g. after ConnectionPanel calls onConnected and the parent updates the row)
+  useEffect(() => {
+    setRequest(initialRequest);
+    setStatus(initialRequest?.status || 'PENDING');
+    setAdminNotes(initialRequest?.adminNotes || '');
+  }, [initialRequest]);
 
   const handleSaveStatus = async () => {
     setSaving(true);
@@ -248,7 +261,7 @@ function AdminConnectionModal({ request: initialRequest, onClose, onUpdated }) {
   };
 
   const handleReject = async () => {
-    setSaving(true);
+    setRejecting(true);
     try {
       const res = await adminOnboarding.updateStatus(request._id, { status: 'REJECTED', adminNotes });
       const updated = res.data?.request || { ...request, status: 'REJECTED', adminNotes };
@@ -257,7 +270,7 @@ function AdminConnectionModal({ request: initialRequest, onClose, onUpdated }) {
       toast.success('Request rejected');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to reject');
-    } finally { setSaving(false); }
+    } finally { setRejecting(false); }
   };
 
   return (
@@ -335,15 +348,23 @@ function AdminConnectionModal({ request: initialRequest, onClose, onUpdated }) {
           {showConnect ? <ChevronUp size={14} style={{ marginLeft: 'auto' }} /> : <ChevronDown size={14} style={{ marginLeft: 'auto' }} />}
         </button>
         {showConnect && (
-          <ConnectionPanel request={request} onConnected={() => { setStatus('CONNECTED'); setRequest(r => ({ ...r, status: 'CONNECTED' })); onUpdated?.({ ...request, status: 'CONNECTED' }); }} />
+          <ConnectionPanel
+            request={request}
+            adminNotes={adminNotes}
+            onConnected={() => {
+              setStatus('CONNECTED');
+              setRequest(r => ({ ...r, status: 'CONNECTED' }));
+              onUpdated?.({ ...request, status: 'CONNECTED', adminNotes });
+            }}
+          />
         )}
 
         {/* Buttons */}
         <div style={{ display: 'flex', gap: 8, marginTop: 20, flexWrap: 'wrap' }}>
           <button onClick={onClose} style={ghostBtn}>Close</button>
           <div style={{ flex: 1 }} />
-          <button onClick={handleReject} disabled={saving} style={dangerBtn}>
-            {saving ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <X size={14} />} Reject
+          <button onClick={handleReject} disabled={rejecting} style={dangerBtn}>
+            {rejecting ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <X size={14} />} Reject
           </button>
           <button onClick={handleSaveStatus} disabled={saving} style={primaryBtn}>
             {saving ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Saving…</> : <><CheckCircle2 size={14} /> Save Status</>}
@@ -358,6 +379,9 @@ function AdminConnectionModal({ request: initialRequest, onClose, onUpdated }) {
 function RequestRow({ request, onUpdated }) {
   const [showModal, setShowModal] = useState(false);
   const [req, setReq] = useState(request);
+
+  // Bug 7 fix: keep local req in sync when the parent array is updated
+  useEffect(() => { setReq(request); }, [request]);
 
   return (
     <>
@@ -402,7 +426,7 @@ const tdSt = { padding: '12px 14px', verticalAlign: 'middle' };
 const thSt = { padding: '10px 14px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '2px solid var(--border)' };
 
 // ── Stats Card ────────────────────────────────────────────────────────────────
-function StatCard({ label, value, color, bg }) {
+function StatCard({ label, value, color }) {
   return (
     <div style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--border)', borderRadius: 12, padding: '16px 18px' }}>
       <div style={{ fontSize: '1.8rem', fontWeight: 800, color, fontFamily: 'var(--font-display)', letterSpacing: '-0.04em' }}>{value}</div>

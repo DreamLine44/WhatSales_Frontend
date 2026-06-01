@@ -51,11 +51,10 @@ export const tenantOnboarding = {
   /**
    * Get the current onboarding request status for this tenant.
    * Returns: { status, request: { ... }, timeline: [...] }
+   * Note: tenant identity is established by the x-api-key header — no tenantId param needed.
    */
   getStatus: () =>
-    tenantHttp.get(`/api/whatsapp/request/status`, {
-      params: { tenantId: getTenantId() },
-    }),
+    tenantHttp.get(`/api/whatsapp/request/status`),
 };
 
 // ── Admin Onboarding API ──────────────────────────────────────────────

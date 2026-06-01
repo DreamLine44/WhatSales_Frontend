@@ -3,7 +3,7 @@ import { useState } from 'react';
 import {
   LayoutDashboard, ShoppingCart, CalendarCheck,
   MessageSquare, BarChart3, Wifi, Clock,
-  Bot, Building2, Menu, X, LogOut, Users, HelpCircle, Zap,
+  Bot, Building2, Menu, X, LogOut, Users, HelpCircle, Zap, Link2,
 } from 'lucide-react';
 import { useAuth } from '../../store/AuthContext';
 import { WhatsalesLogo } from '../../App';
@@ -17,7 +17,7 @@ const NAV_SETUP = [
   { to: '/setup/bot',               icon: Bot,       label: 'Bot Messages'          },
   { to: '/setup/hours',             icon: Clock,     label: 'Opening Hours'         },
   { to: '/setup/whatsapp',          icon: Wifi,      label: 'WhatsApp'              },
-  { to: '/setup/whatsapp-connect',  icon: Wifi,      label: 'WhatsApp Connection'   },
+  { to: '/setup/whatsapp-connect',  icon: Link2,     label: 'WhatsApp Connection'   },
 ];
 
 export default function DashboardLayout() {
