@@ -1,8 +1,10 @@
 /**
  * whatsappOnboardingApi.js
  * Isolated API service for the WhatsApp Onboarding System.
- * Does NOT modify or import from existing api.js exports — it reuses
- * the same axios instance and helper functions by importing them.
+ * Uses a dedicated axios instance for tenant auth, and plain axios for admin
+ * calls (each with explicit headers). Does NOT modify or import from existing
+ * api.js exports — credential helpers mirror the same localStorage/sessionStorage
+ * keys used by the rest of the app.
  */
 
 import axios from 'axios';
@@ -18,7 +20,9 @@ function getAdminApiKey() {
   if (stored) {
     try { return JSON.parse(stored).apiKey; } catch {}
   }
-  return import.meta.env.VITE_ADMIN_API_KEY || '';
+  // NOTE: No env-var fallback here — the admin API key must never be bundled
+  // into client-side code. Admin sessions are established at runtime via login.
+  return '';
 }
 
 // ── Tenant-authenticated instance ─────────────────────────────────────

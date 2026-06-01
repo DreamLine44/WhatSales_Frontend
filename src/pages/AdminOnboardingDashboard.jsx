@@ -25,16 +25,7 @@ import {
   Zap, MessageSquare,
 } from 'lucide-react';
 
-// ── Shared style atoms ────────────────────────────────────────────────────────
-const card = (extra = {}) => ({
-  background: 'var(--bg-surface)',
-  border: '1.5px solid var(--border)',
-  borderRadius: 12,
-  padding: '20px 22px',
-  ...extra,
-});
-
-const labelSt = { fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 };
+// ── Shared style atoms ────────────────────────────────────────────────────────const labelSt = { fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 };
 
 const inputSt = {
   width: '100%', padding: '9px 12px', border: '1.5px solid var(--border)', borderRadius: 8,
@@ -147,6 +138,10 @@ function ConnectionPanel({ request, adminNotes, onConnected }) {
   const tenantId = request?.tenantId;
 
   const handleSave = async () => {
+    if (!tenantId) {
+      toast.error('Tenant ID is missing — cannot save credentials');
+      return;
+    }
     if (!form.phoneNumberId || !form.accessToken) {
       toast.error('Phone Number ID and Access Token are required');
       return;
@@ -161,6 +156,10 @@ function ConnectionPanel({ request, adminNotes, onConnected }) {
   };
 
   const handleTest = async () => {
+    if (!tenantId) {
+      toast.error('Tenant ID is missing — cannot test connection');
+      return;
+    }
     setTesting(true);
     setTestResult(null);
     try {

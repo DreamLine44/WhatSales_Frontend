@@ -142,8 +142,14 @@ function WhatsAppRequestForm({ onSubmitted, submitting, submitError }) {
         return;
       }
     }
-    if (!form.contactEmail.includes('@')) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(form.contactEmail.trim())) {
       toast.error('Please enter a valid email address');
+      return;
+    }
+    const phoneDigits = form.whatsappNumber.replace(/\D/g, '');
+    if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+      toast.error('Please enter a valid WhatsApp number (7–15 digits)');
       return;
     }
     await onSubmitted(form);
