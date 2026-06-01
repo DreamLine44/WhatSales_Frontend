@@ -13,7 +13,7 @@ import {
   Wifi, Send, CheckCircle2, Clock,
   Building2, AlertTriangle, Loader2, RefreshCw,
   MessageSquare, ChevronRight, Zap, Info,
-  Phone, Mail, User,
+  Phone, Mail, User, X,
 } from 'lucide-react';
 import { useWhatsAppOnboarding } from '../hooks/useWhatsAppOnboarding';
 import { BUSINESS_CATEGORIES, ONBOARDING_STATUSES, getStatusMeta } from '../services/whatsappOnboardingApi';
@@ -121,7 +121,7 @@ const STATUS_NOTIFICATIONS = {
 };
 
 // ── WhatsAppRequestForm ───────────────────────────────────────────────────────
-function WhatsAppRequestForm({ onSubmitted, submitting }) {
+function WhatsAppRequestForm({ onSubmitted, submitting, submitError }) {
   const [form, setForm] = useState({
     businessName: '',
     businessCategory: '',
@@ -248,6 +248,14 @@ function WhatsAppRequestForm({ onSubmitted, submitting }) {
           style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6, borderColor: focused === 'additionalNotes' ? 'var(--primary)' : undefined }}
         />
       </div>
+
+      {/* Submit error — shown inline so user knows exactly what failed */}
+      {submitError && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '11px 14px', background: 'var(--red-dim)', border: '1px solid rgba(220,53,53,0.2)', borderRadius: 8, marginBottom: 16 }}>
+          <AlertTriangle size={14} color="var(--red)" style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ fontSize: '0.82rem', color: 'var(--red)', lineHeight: 1.5 }}>{submitError}</div>
+        </div>
+      )}
 
       <button onClick={handleSubmit} disabled={submitting} style={{ ...primaryBtn, width: '100%', justifyContent: 'center', opacity: submitting ? 0.7 : 1 }}>
         {submitting
@@ -420,8 +428,12 @@ function OnboardingTimeline({ request }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function WhatsAppConnectionPage() {
-  const { request, loading, submitting, error, fetchStatus, submitRequest, hasRequest } = useWhatsAppOnboarding();
+  const {
+    request, loading, submitting, error, fetchError,
+    fetchStatus, submitRequest, hasRequest,
+  } = useWhatsAppOnboarding();
   const navigate = useNavigate();
+  const [fetchWarningDismissed, setFetchWarningDismissed] = useState(false);
 
   const handleSubmit = async (formData) => {
     const result = await submitRequest(formData);
@@ -455,26 +467,28 @@ export default function WhatsAppConnectionPage() {
         </div>
       )}
 
-      {/* Error */}
-      {!loading && error && (
-        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '14px 16px', background: 'var(--red-dim)', border: '1px solid rgba(220,53,53,0.2)', borderRadius: 10, marginBottom: 24 }}>
-          <AlertTriangle size={16} color="var(--red)" style={{ flexShrink: 0, marginTop: 1 }} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--red)', marginBottom: 4 }}>Error loading status</div>
-            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{error}</div>
+      {/* Soft warning: status check failed but the form is still fully usable */}
+      {!loading && fetchError && !fetchWarningDismissed && !hasRequest && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '11px 14px', background: 'var(--amber-dim)', border: '1px solid rgba(184,109,0,0.2)', borderRadius: 10, marginBottom: 18, maxWidth: 680, margin: '0 auto 18px' }}>
+          <AlertTriangle size={14} color="var(--amber)" style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ flex: 1, fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            Could not check for an existing request. You can still submit the form below.
           </div>
-          <button onClick={fetchStatus} style={{ ...ghostBtn, fontSize: '0.8rem', flexShrink: 0 }}>
-            <RefreshCw size={13} /> Retry
+          <button
+            onClick={() => setFetchWarningDismissed(true)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, flexShrink: 0, display: 'flex' }}
+          >
+            <X size={13} />
           </button>
         </div>
       )}
 
-      {/* No request yet — show form */}
-      {!loading && !hasRequest && !error && (
-        <WhatsAppRequestForm onSubmitted={handleSubmit} submitting={submitting} />
+      {/* No confirmed request — always show the form */}
+      {!loading && !hasRequest && (
+        <WhatsAppRequestForm onSubmitted={handleSubmit} submitting={submitting} submitError={error} />
       )}
 
-      {/* Has request — show status + timeline */}
+      {/* Has a confirmed request — show status + timeline */}
       {!loading && hasRequest && (
         <>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>

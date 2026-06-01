@@ -441,16 +441,20 @@ export default function AdminOnboardingDashboard() {
   const navigate = useNavigate();
   const [requests, setRequests]  = useState([]);
   const [loading, setLoading]    = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [search, setSearch]      = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await adminOnboarding.listRequests();
       setRequests(res.data?.requests || res.data || []);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to load requests');
+      const msg = err.response?.data?.message || err.message || 'Failed to load requests';
+      setLoadError(msg);
+      toast.error(msg);
     } finally { setLoading(false); }
   }, []);
 
@@ -554,6 +558,19 @@ export default function AdminOnboardingDashboard() {
             <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
               <Loader2 size={28} color="var(--primary)" style={{ animation: 'spin 1s linear infinite', marginBottom: 10 }} />
               <div style={{ fontSize: '0.88rem' }}>Loading requests…</div>
+            </div>
+          ) : loadError ? (
+            <div style={{ textAlign: 'center', padding: '60px 24px' }}>
+              <AlertTriangle size={36} color="var(--red)" style={{ marginBottom: 12, opacity: 0.7 }} />
+              <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+                Failed to load requests
+              </div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 18 }}>
+                {loadError}
+              </div>
+              <button onClick={fetchRequests} style={primaryBtn}>
+                <RefreshCw size={14} /> Retry
+              </button>
             </div>
           ) : filtered.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 0' }}>
