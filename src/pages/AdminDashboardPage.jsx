@@ -855,8 +855,21 @@ export default function AdminDashboardPage() {
           ))}
         </div>
 
-        {/* Quick guide */}
-        {tenants.length === 0 && !loading && (
+        {/* ── WhatsApp Onboarding section (NEW) ─────────────────────────── */}
+        <div style={{ marginBottom: 24, padding: '16px 20px', background: 'var(--bg-surface)', border: '1.5px solid var(--border)', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 42, height: 42, borderRadius: 11, background: 'var(--primary-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Wifi size={20} color="var(--primary)" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', marginBottom: 2 }}>WhatsApp Onboarding</div>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Review tenant connection requests, update statuses, and configure credentials.</div>
+          </div>
+          <button onClick={() => navigate('/admin/onboarding')} style={{ ...primaryBtn, flexShrink: 0 }}>
+            Manage Requests <ArrowRight size={14} />
+          </button>
+        </div>
+
+        {/* Quick guide */}        {tenants.length === 0 && !loading && (
           <div style={{ marginBottom: 24, padding: '18px 20px', background: 'var(--primary-dim)', border: '1.5px solid var(--border-accent)', borderRadius: 14 }}>
             <div style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '0.9rem', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 7 }}>
               <Zap size={15} /> Getting started

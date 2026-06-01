@@ -6,7 +6,6 @@ import { AuthProvider, useAuth } from './store/AuthContext';
 import { getNavVisibility } from './utils/businessConfig';
 import DashboardLayout from './components/layout/DashboardLayout';
 
-//
 import LoginPage        from './pages/LoginPage';
 import NotFoundPage     from './pages/NotFoundPage';
 import DashboardPage    from './pages/DashboardPage';
@@ -23,6 +22,8 @@ import AnalyticsPage    from './pages/AnalyticsPage';
 import CustomersPage    from './pages/CustomersPage';
 import FAQPage          from './pages/FAQPage';
 import SetupWizardPage  from './pages/SetupWizardPage';
+import WhatsAppConnectionPage from './pages/WhatsAppConnectionPage';
+import AdminOnboardingDashboard from './pages/AdminOnboardingDashboard';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -138,10 +139,16 @@ export default function App() {
               <Route path="setup/hours"     element={<HoursPage />} />
               <Route path="setup/whatsapp"  element={<WhatsAppPage />} />
               <Route path="setup/wizard"    element={<SetupWizardPage />} />
+              <Route path="setup/whatsapp-connect" element={<WhatsAppConnectionPage />} />
             </Route>
             <Route path="admin" element={
               <ProtectedAdminRoute>
                 <AdminDashboardPage />
+              </ProtectedAdminRoute>
+            } />
+            <Route path="admin/onboarding" element={
+              <ProtectedAdminRoute>
+                <AdminOnboardingDashboard />
               </ProtectedAdminRoute>
             } />
             <Route path="*" element={<NotFoundPage />} />

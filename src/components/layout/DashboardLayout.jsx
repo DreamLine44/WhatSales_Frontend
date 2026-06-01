@@ -12,11 +12,12 @@ import toast from 'react-hot-toast';
 import styles from './DashboardLayout.module.css';
 
 const NAV_SETUP = [
-  { to: '/setup/wizard',   icon: Zap,       label: 'Get Started 🚀' },
-  { to: '/setup/business', icon: Building2, label: 'Business Info' },
-  { to: '/setup/bot',      icon: Bot,       label: 'Bot Messages'  },
-  { to: '/setup/hours',    icon: Clock,     label: 'Opening Hours' },
-  { to: '/setup/whatsapp', icon: Wifi,      label: 'WhatsApp'      },
+  { to: '/setup/wizard',            icon: Zap,       label: 'Get Started 🚀'       },
+  { to: '/setup/business',          icon: Building2, label: 'Business Info'         },
+  { to: '/setup/bot',               icon: Bot,       label: 'Bot Messages'          },
+  { to: '/setup/hours',             icon: Clock,     label: 'Opening Hours'         },
+  { to: '/setup/whatsapp',          icon: Wifi,      label: 'WhatsApp'              },
+  { to: '/setup/whatsapp-connect',  icon: Wifi,      label: 'WhatsApp Connection'   },
 ];
 
 export default function DashboardLayout() {
