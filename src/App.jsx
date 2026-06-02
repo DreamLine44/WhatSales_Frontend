@@ -6,7 +6,6 @@ import { AuthProvider, useAuth } from './store/AuthContext';
 import { getNavVisibility } from './utils/businessConfig';
 import DashboardLayout from './components/layout/DashboardLayout';
 
-
 import LoginPage        from './pages/LoginPage';
 import NotFoundPage     from './pages/NotFoundPage';
 import DashboardPage    from './pages/DashboardPage';
@@ -23,8 +22,6 @@ import AnalyticsPage    from './pages/AnalyticsPage';
 import CustomersPage    from './pages/CustomersPage';
 import FAQPage          from './pages/FAQPage';
 import SetupWizardPage  from './pages/SetupWizardPage';
-import WhatsAppConnectionPage from './pages/WhatsAppConnectionPage';
-import AdminOnboardingDashboard from './pages/AdminOnboardingDashboard';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -47,27 +44,6 @@ function ProtectedAdminRoute({ children }) {
   if (loading) return <SplashScreen />;
   if (!isAdmin) return <Navigate to="/login" replace />;
   return children;
-}
-
-export function WhatsalesLogo({ size = 32, light = false }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
-      <rect width="40" height="40" rx="11"
-        fill={light ? 'rgba(159,224,180,0.12)' : 'var(--primary)'}
-        stroke={light ? 'rgba(159,224,180,0.24)' : 'none'}
-        strokeWidth="1.5"
-      />
-      <path
-        d="M20 8C13.373 8 8 13.373 8 20c0 2.144.566 4.155 1.556 5.894L8 32l6.293-1.513A11.94 11.94 0 0020 32c6.627 0 12-5.373 12-12S26.627 8 20 8z"
-        fill={light ? 'var(--mint)' : '#ffffff'}
-        fillOpacity={light ? 0.9 : 0.96}
-      />
-      <path d="M15 18h10M15 22h7"
-        stroke={light ? 'var(--deep-green)' : 'var(--primary)'}
-        strokeWidth="2.2" strokeLinecap="round"
-      />
-    </svg>
-  );
 }
 
 function SplashScreen() {
@@ -94,6 +70,27 @@ function SplashScreen() {
         </div>
       </div>
     </div>
+  );
+}
+
+export function WhatsalesLogo({ size = 32, light = false }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
+      <rect width="40" height="40" rx="11"
+        fill={light ? 'rgba(159,224,180,0.12)' : 'var(--primary)'}
+        stroke={light ? 'rgba(159,224,180,0.24)' : 'none'}
+        strokeWidth="1.5"
+      />
+      <path
+        d="M20 8C13.373 8 8 13.373 8 20c0 2.144.566 4.155 1.556 5.894L8 32l6.293-1.513A11.94 11.94 0 0020 32c6.627 0 12-5.373 12-12S26.627 8 20 8z"
+        fill={light ? 'var(--mint)' : '#ffffff'}
+        fillOpacity={light ? 0.9 : 0.96}
+      />
+      <path d="M15 18h10M15 22h7"
+        stroke={light ? 'var(--deep-green)' : 'var(--primary)'}
+        strokeWidth="2.2" strokeLinecap="round"
+      />
+    </svg>
   );
 }
 
@@ -140,16 +137,10 @@ export default function App() {
               <Route path="setup/hours"     element={<HoursPage />} />
               <Route path="setup/whatsapp"  element={<WhatsAppPage />} />
               <Route path="setup/wizard"    element={<SetupWizardPage />} />
-              <Route path="setup/whatsapp-connect" element={<WhatsAppConnectionPage />} />
             </Route>
-            <Route path="/admin" element={
+            <Route path="admin" element={
               <ProtectedAdminRoute>
                 <AdminDashboardPage />
-              </ProtectedAdminRoute>
-            } />
-            <Route path="/admin/onboarding" element={
-              <ProtectedAdminRoute>
-                <AdminOnboardingDashboard />
               </ProtectedAdminRoute>
             } />
             <Route path="*" element={<NotFoundPage />} />

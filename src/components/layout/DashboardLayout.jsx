@@ -1,9 +1,9 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import {
   LayoutDashboard, ShoppingCart, CalendarCheck,
   MessageSquare, BarChart3, Wifi, Clock,
-  Bot, Building2, Menu, X, LogOut, Users, HelpCircle, Zap, Link2,
+  Bot, Building2, Menu, X, LogOut, Users, HelpCircle, Zap,
 } from 'lucide-react';
 import { useAuth } from '../../store/AuthContext';
 import { WhatsalesLogo } from '../../App';
@@ -12,12 +12,11 @@ import toast from 'react-hot-toast';
 import styles from './DashboardLayout.module.css';
 
 const NAV_SETUP = [
-  { to: '/setup/wizard',            icon: Zap,       label: 'Get Started 🚀'       },
-  { to: '/setup/business',          icon: Building2, label: 'Business Info'         },
-  { to: '/setup/bot',               icon: Bot,       label: 'Bot Messages'          },
-  { to: '/setup/hours',             icon: Clock,     label: 'Opening Hours'         },
-  { to: '/setup/whatsapp',          icon: Wifi,      label: 'WhatsApp'              },
-  { to: '/setup/whatsapp-connect',  icon: Link2,     label: 'WhatsApp Connection'   },
+  { to: '/setup/wizard',   icon: Zap,       label: 'Get Started 🚀' },
+  { to: '/setup/business', icon: Building2, label: 'Business Info' },
+  { to: '/setup/bot',      icon: Bot,       label: 'Bot Messages'  },
+  { to: '/setup/hours',    icon: Clock,     label: 'Opening Hours' },
+  { to: '/setup/whatsapp', icon: Wifi,      label: 'WhatsApp'      },
 ];
 
 export default function DashboardLayout() {
