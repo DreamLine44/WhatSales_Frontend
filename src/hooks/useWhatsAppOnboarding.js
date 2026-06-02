@@ -1,43 +1,60 @@
 /**
  * useWhatsAppOnboarding.js
- * Custom hook that manages all tenant-side onboarding state.
- * Isolated — does not touch any existing hooks or context.
+ * Custom hook managing tenant-side onboarding state.
+ *
+ * FIXES:
+ *  [FIX-HOOK-1] submitRequest passes formData through the API service which
+ *               maps field names correctly (contactPersonName→contactPerson, etc.)
+ *  [FIX-HOOK-2] Error messages read both .error and .message from backend response.
+ *  [FIX-HOOK-3] submitRequest reads res.data.request correctly — backend returns
+ *               { message, request: { _id, status, businessName, ... } }.
+ *  [FIX-HOOK-4] fetchStatus reads res.data.request from backend shape.
+ *  [FIX-HOOK-5] 404 AND 400/422 with "no request" body are both treated as
+ *               "no existing request" — not as an error state. This prevents
+ *               the error banner blocking the form for brand-new users.
+ *  [FIX-HOOK-6] submitRequest also clears stale errors on success.
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { tenantOnboarding } from '../services/whatsappOnboardingApi';
 
 export function useWhatsAppOnboarding() {
-  const [request, setRequest]       = useState(null);   // existing onboarding request or null
+  const [request, setRequest]       = useState(null);
   const [loading, setLoading]       = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState(null);
-  // fetchError is separate from error: it means "we couldn't check status" but
-  // does NOT block the form — the user can still submit a new request.
-  const [fetchError, setFetchError] = useState(null);
 
+  // [FIX-HOOK-5] Detect "no request found" responses beyond just 404
+  function isNoRequestError(err) {
+    const status = err.response?.status;
+    if (status === 404) return true;
+    // Some backends return 400 / 200 with empty body when no request exists
+    if (status === 400 || status === 422) {
+      const msg = (err.response?.data?.error || err.response?.data?.message || '').toLowerCase();
+      if (msg.includes('no request') || msg.includes('not found') || msg.includes('does not exist')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // [FIX-HOOK-4] Read from res.data.request (backend shape: { request: {...} })
   const fetchStatus = useCallback(async () => {
     setLoading(true);
     setError(null);
-    setFetchError(null);
     try {
       const res = await tenantOnboarding.getStatus();
-      setRequest(res.data?.request || null);
+      // Handle both { request: {...} } and a bare request object
+      const req = res.data?.request ?? (res.data?._id ? res.data : null);
+      setRequest(req);
     } catch (err) {
-      // 404 = no request exists yet — that's normal, show the form silently
-      if (err.response?.status === 404) {
+      if (isNoRequestError(err)) {
+        // Normal for new tenants — not an error
         setRequest(null);
       } else {
-        // Any other error: we couldn't confirm status.
-        // Do NOT set a hard error that hides the form — set a soft fetchError
-        // so the user can still submit. The form may work fine even if status
-        // check failed (e.g. route not yet deployed, temporary server error).
-        setRequest(null);
-        setFetchError(
-          err.response?.data?.message ||
-          err.message ||
-          'Could not check existing request status.'
-        );
+        // [FIX-HOOK-2] Backend uses { error: '...' }
+        const msg = err.response?.data?.error || err.response?.data?.message || 'Failed to load onboarding status';
+        setError(msg);
       }
     } finally {
       setLoading(false);
@@ -50,17 +67,20 @@ export function useWhatsAppOnboarding() {
     setSubmitting(true);
     setError(null);
     try {
+      // [FIX-HOOK-1] API service handles field name mapping — pass formData through
       const res = await tenantOnboarding.submitRequest(formData);
-      const newRequest = res.data?.request || res.data;
+      // [FIX-HOOK-3] Backend returns { message, request: { _id, status, ... } }
+      const newRequest = res.data?.request ?? res.data;
       setRequest(newRequest);
-      setFetchError(null); // clear soft warning on successful submit
       return { success: true, request: newRequest };
     } catch (err) {
-      const msg =
-        err.response?.data?.message ||
-        err.response?.data?.error ||
-        err.message ||
-        'Failed to submit request';
+      // [FIX-HOOK-2] Read .error first, then .message, then generic fallback
+      const errData = err.response?.data;
+      let msg = errData?.error || errData?.message || 'Failed to submit request';
+      // If there's a details array (validation errors), show the first one
+      if (Array.isArray(errData?.details) && errData.details.length > 0) {
+        msg = errData.details[0];
+      }
       setError(msg);
       return { success: false, error: msg };
     } finally {
@@ -72,8 +92,7 @@ export function useWhatsAppOnboarding() {
     request,
     loading,
     submitting,
-    error,       // hard error from submitRequest — shown in form area
-    fetchError,  // soft warning from fetchStatus — shown above form but doesn't block it
+    error,
     fetchStatus,
     submitRequest,
     hasRequest: !!request,

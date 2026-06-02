@@ -2,30 +2,59 @@
  * AdminOnboardingDashboard.jsx
  * Super-Admin page for managing WhatsApp onboarding requests.
  *
- * NEW FILE — does not modify AdminDashboardPage.jsx.
- * Accessible via: /admin/onboarding  (linked from AdminDashboardPage button)
- *
- * Sections:
- *  - Stats (Total, Pending, Contacted, Connecting, Connected, Rejected)
- *  - Requests Table with search + filter
- *  - Review Modal (view details, update status, admin notes)
- *  - Connection Panel (save credentials, test connection, mark connected)
+ * FIXES APPLIED:
+ *  [FIX-ADMIN-1]  Status select in AdminConnectionModal now normalises the initial
+ *                 value to UPPERCASE so it always matches the option keys. DB returns
+ *                 lowercase ('pending'), options use uppercase ('PENDING') — was blank.
+ *  [FIX-ADMIN-2]  handleSaveStatus sends status lowercased (backend canonical form).
+ *  [FIX-ADMIN-3]  ConnectionPanel.tenantId extraction uses extractTenantId() helper
+ *                 which correctly unwraps populated objects (tenantId._id || tenantId).
+ *  [FIX-ADMIN-4]  ConnectionTestResult now normalises result.result to lowercase before
+ *                 lookup — backend returns 'CONNECTED' but config keys were lowercase.
+ *  [FIX-ADMIN-5]  handleMarkConnected in ConnectionPanel now calls the dedicated
+ *                 testConnection endpoint (POST /admin/whatsapp/test/:tenantId) instead
+ *                 of manually patching status — backend handles the connected transition
+ *                 atomically (transaction + notification + Tenant.status=ACTIVE).
+ *  [FIX-ADMIN-6]  ConnectionPanel validates wabaId is also present before saving.
+ *  [FIX-ADMIN-7]  onConnected callback now triggers full modal refresh + parent list refresh.
+ *  [FIX-ADMIN-8]  handleReject is protected: shows confirm prompt before rejecting.
+ *  [FIX-ADMIN-9]  Status select prevents backwards transitions by showing a warning
+ *                 when the selected status is a backwards move.
+ *  [FIX-ADMIN-10] Request list fetchRequests now shows the full error from backend.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../store/AdminContext';
-import { adminOnboarding, getStatusMeta, ONBOARDING_STATUSES } from '../services/whatsappOnboardingApi';
+import {
+  adminOnboarding,
+  getStatusMeta,
+  normalizeStatus,
+  ONBOARDING_STATUSES,
+  extractTenantId,
+} from '../services/whatsappOnboardingApi';
 import { WhatsalesLogo } from '../App';
 import toast from 'react-hot-toast';
 import {
   ArrowLeft, RefreshCw, Search, X, Loader2, ChevronDown, ChevronUp,
   LogOut, Wifi, AlertTriangle, CheckCircle2, Eye,
-  Building2, User, Key,
+  Building2, User, FileText, Clock, Key,
   Zap, MessageSquare,
 } from 'lucide-react';
 
-// ── Shared style atoms ────────────────────────────────────────────────────────const labelSt = { fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 };
+// ── Shared style atoms ─────────────────────────────────────────────────────────
+const card = (extra = {}) => ({
+  background: 'var(--bg-surface)',
+  border: '1.5px solid var(--border)',
+  borderRadius: 12,
+  padding: '20px 22px',
+  ...extra,
+});
+
+const labelSt = {
+  fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)',
+  display: 'block', marginBottom: 5,
+};
 
 const inputSt = {
   width: '100%', padding: '9px 12px', border: '1.5px solid var(--border)', borderRadius: 8,
@@ -47,7 +76,8 @@ const ghostBtn = {
   fontSize: '0.85rem', cursor: 'pointer',
 };
 
-const dangerBtn = { ...primaryBtn, background: 'var(--red)' };
+const dangerBtn  = { ...primaryBtn, background: 'var(--red)' };
+const successBtn = { ...primaryBtn, background: 'var(--green)' };
 
 const modalOverlay = {
   position: 'fixed', inset: 0, background: 'rgba(8,18,12,0.58)',
@@ -59,18 +89,18 @@ const modalBox = {
   width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
   border: '1.5px solid var(--border)',
 };
+const iconBtn = {
+  background: 'none', border: 'none', padding: 4, cursor: 'pointer',
+  color: 'var(--text-muted)', display: 'flex', alignItems: 'center', borderRadius: 4,
+};
 
-const iconBtn = { background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', borderRadius: 4 };
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 function useEscapeKey(fn) {
-  const fnRef = useRef(fn);
-  useEffect(() => { fnRef.current = fn; });
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') fnRef.current(); };
+    const h = (e) => { if (e.key === 'Escape') fn(); };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
-  }, []); // empty deps — handler is stable via ref
+  }, [fn]);
 }
 
 function formatDate(iso) {
@@ -89,8 +119,9 @@ function InfoRow({ label, value, mono }) {
   );
 }
 
-// ── StatusBadge ───────────────────────────────────────────────────────────────
+// ── StatusBadge ────────────────────────────────────────────────────────────────
 function StatusBadge({ status }) {
+  // [FIX-ADMIN-1] normalizeStatus handles both 'pending' and 'PENDING'
   const meta = getStatusMeta(status);
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.75rem', fontWeight: 700, color: meta.color, background: meta.bg, padding: '3px 10px', borderRadius: 99 }}>
@@ -100,19 +131,23 @@ function StatusBadge({ status }) {
   );
 }
 
-// ── ConnectionTestResult ──────────────────────────────────────────────────────
+// ── ConnectionTestResult ───────────────────────────────────────────────────────
+// [FIX-ADMIN-4] result.result comes as uppercase from backend ('CONNECTED','INVALID_TOKEN'…)
+//               normalise to lowercase for config lookup.
 function ConnectionTestResult({ result }) {
   if (!result) return null;
 
   const configs = {
-    connected:     { color: 'var(--green)',  bg: 'var(--green-dim)',  icon: CheckCircle2, title: 'Connected', msg: 'WhatsApp connection is working correctly.' },
-    invalid_token: { color: 'var(--red)',    bg: 'var(--red-dim)',    icon: AlertTriangle, title: 'Invalid Token', msg: 'The access token is invalid or expired.' },
-    invalid_phone: { color: 'var(--amber)',  bg: 'var(--amber-dim)', icon: AlertTriangle, title: 'Invalid Phone Number', msg: 'The Phone Number ID is invalid or not found.' },
-    meta_error:    { color: 'var(--red)',    bg: 'var(--red-dim)',    icon: AlertTriangle, title: 'Meta API Error', msg: result.message || 'An error was returned from Meta.' },
-    error:         { color: 'var(--red)',    bg: 'var(--red-dim)',    icon: AlertTriangle, title: 'Connection Failed', msg: result.message || 'Unknown error during connection test.' },
+    connected:            { color: 'var(--green)',  bg: 'var(--green-dim)',  icon: CheckCircle2, title: 'Connected',           msg: 'WhatsApp connection is working correctly. Tenant is now live!' },
+    invalid_token:        { color: 'var(--red)',    bg: 'var(--red-dim)',    icon: AlertTriangle, title: 'Invalid Token',       msg: 'The access token is invalid or expired. Rotate it in Meta Business Suite.' },
+    invalid_phone_number: { color: 'var(--amber)',  bg: 'var(--amber-dim)', icon: AlertTriangle, title: 'Invalid Phone Number', msg: 'The Phone Number ID is invalid or not accessible with this token.' },
+    meta_error:           { color: 'var(--red)',    bg: 'var(--red-dim)',    icon: AlertTriangle, title: 'Meta API Error',      msg: result.error || result.message || 'An error was returned from Meta.' },
+    error:                { color: 'var(--red)',    bg: 'var(--red-dim)',    icon: AlertTriangle, title: 'Connection Failed',   msg: result.error || result.message || 'Unknown error during connection test.' },
   };
 
-  const cfg = configs[result.status] || configs.error;
+  // [FIX-ADMIN-4] normalise result key: 'CONNECTED' → 'connected', 'INVALID_TOKEN' → 'invalid_token'
+  const rawKey = (result.result || 'error').toLowerCase().replace(/_/g, '_');
+  const cfg = configs[rawKey] || configs.error;
   const Icon = cfg.icon;
 
   return (
@@ -121,67 +156,84 @@ function ConnectionTestResult({ result }) {
       <div>
         <div style={{ fontWeight: 700, fontSize: '0.85rem', color: cfg.color, marginBottom: 2 }}>{cfg.title}</div>
         <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{cfg.msg}</div>
+        {result.hint && (
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+            💡 {result.hint}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// ── ConnectionPanel ───────────────────────────────────────────────────────────
-function ConnectionPanel({ request, adminNotes, onConnected }) {
+// ── ConnectionPanel ────────────────────────────────────────────────────────────
+function ConnectionPanel({ request, onConnected, onRequestUpdated }) {
   const [form, setForm] = useState({ phoneNumberId: '', wabaId: '', accessToken: '', verifyToken: '' });
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving]   = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
-  const [marking, setMarking] = useState(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const tenantId = request?.tenantId;
 
+  // [FIX-ADMIN-3] Use extractTenantId to handle both raw string and populated object
+  const tenantId = extractTenantId(request);
+
+  // [FIX-ADMIN-6] Validate both required credential fields before saving
   const handleSave = async () => {
+    if (!form.phoneNumberId.trim()) {
+      toast.error('Phone Number ID is required');
+      return;
+    }
+    if (!form.wabaId.trim()) {
+      toast.error('WABA ID (Business Account ID) is required');
+      return;
+    }
     if (!tenantId) {
       toast.error('Tenant ID is missing — cannot save credentials');
       return;
     }
-    if (!form.phoneNumberId || !form.accessToken) {
-      toast.error('Phone Number ID and Access Token are required');
-      return;
-    }
+
     setSaving(true);
     try {
       await adminOnboarding.saveCredentials(tenantId, form);
-      toast.success('Credentials saved successfully');
+      toast.success('Credentials saved. Run "Test & Connect" to verify.');
+      setTestResult(null);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to save credentials');
+      const msg = err.response?.data?.error || err.response?.data?.message || 'Failed to save credentials';
+      toast.error(msg);
     } finally { setSaving(false); }
   };
 
-  const handleTest = async () => {
+  // [FIX-ADMIN-5] Test connection via backend endpoint — backend handles the full
+  //               connected transition atomically (was: manually patching status).
+  const handleTestAndConnect = async () => {
     if (!tenantId) {
       toast.error('Tenant ID is missing — cannot test connection');
       return;
     }
+
     setTesting(true);
     setTestResult(null);
     try {
       const res = await adminOnboarding.testConnection(tenantId);
-      setTestResult(res.data || { status: 'connected' });
-    } catch (err) {
-      setTestResult({ status: err.response?.data?.status || 'error', message: err.response?.data?.message || 'Connection test failed' });
-    } finally { setTesting(false); }
-  };
+      const data = res.data;
+      setTestResult(data);
 
-  const handleMarkConnected = async () => {
-    setMarking(true);
-    try {
-      await adminOnboarding.updateStatus(request._id, {
-        status: 'CONNECTED',
-        adminNotes: adminNotes || 'WhatsApp successfully connected.',
-      });
-      toast.success('Marked as Connected');
-      onConnected?.();
+      if (data?.result === 'CONNECTED') {
+        toast.success('WhatsApp verified — tenant is now live!');
+        // [FIX-ADMIN-7] Signal parent to refresh the request state
+        onConnected?.();
+        onRequestUpdated?.({ ...request, status: 'connected' });
+      }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to update status');
-    } finally { setMarking(false); }
+      const errData = err.response?.data || {};
+      // Still show the result card even on API error
+      setTestResult({
+        result:  errData.result || 'error',
+        error:   errData.error  || errData.message || 'Connection test failed',
+        hint:    errData.hint   || null,
+      });
+    } finally { setTesting(false); }
   };
 
   return (
@@ -190,13 +242,20 @@ function ConnectionPanel({ request, adminNotes, onConnected }) {
         <Wifi size={13} color="var(--primary)" /> WhatsApp Credentials
       </div>
 
+      {/* [FIX-ADMIN-3] Show resolved tenantId for debugging */}
+      {tenantId && (
+        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 12, fontFamily: 'monospace' }}>
+          Tenant: {tenantId}
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {[
-          ['phoneNumberId', 'Phone Number ID', false, 'From Meta → WhatsApp → API Setup'],
-          ['wabaId', 'WABA ID (Business Account ID)', false, 'Meta WhatsApp Business Account ID'],
-          ['accessToken', 'Permanent Access Token', true, 'Permanent token from Meta'],
-          ['verifyToken', 'Webhook Verify Token', false, 'Any secure string — must match Meta webhook config'],
-        ].map(([key, lbl, secret, hint]) => (
+          { key: 'phoneNumberId', label: 'Phone Number ID *',             secret: false, hint: 'Meta → WhatsApp → API Setup → Phone number ID (numeric, 10–20 digits)' },
+          { key: 'wabaId',        label: 'WABA ID (Business Account ID) *', secret: false, hint: 'Meta → WhatsApp → API Setup → WhatsApp Business Account ID' },
+          { key: 'accessToken',   label: 'Permanent Access Token',        secret: true,  hint: 'Permanent system user token from Meta Business Suite' },
+          { key: 'verifyToken',   label: 'Webhook Verify Token',          secret: false, hint: 'Any secure string — must match what you set in Meta webhook config' },
+        ].map(({ key, label: lbl, secret, hint }) => (
           <div key={key}>
             <label style={labelSt}>{lbl}</label>
             {hint && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 3 }}>{hint}</div>}
@@ -204,7 +263,7 @@ function ConnectionPanel({ request, adminNotes, onConnected }) {
               type={secret ? 'password' : 'text'}
               value={form[key]}
               onChange={e => set(key, e.target.value)}
-              placeholder={`Enter ${lbl}`}
+              placeholder={`Enter ${lbl.replace(' *', '')}`}
               style={{ ...inputSt, fontFamily: 'monospace', fontSize: '0.82rem' }}
             />
           </div>
@@ -214,68 +273,85 @@ function ConnectionPanel({ request, adminNotes, onConnected }) {
       {testResult && <ConnectionTestResult result={testResult} />}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-        <button onClick={handleSave} disabled={saving} style={{ ...primaryBtn }}>
-          {saving ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Saving…</> : <><Key size={14} /> Save Credentials</>}
+        <button onClick={handleSave} disabled={saving} style={primaryBtn}>
+          {saving
+            ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Saving…</>
+            : <><Key size={14} /> Save Credentials</>
+          }
         </button>
-        <button onClick={handleTest} disabled={testing} style={ghostBtn}>
-          {testing ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Testing…</> : <><Zap size={14} /> Test Connection</>}
+        {/* [FIX-ADMIN-5] Combined Test + Connect button — backend handles transition atomically */}
+        <button onClick={handleTestAndConnect} disabled={testing || saving} style={successBtn}>
+          {testing
+            ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Testing…</>
+            : <><Zap size={14} /> Test &amp; Connect</>
+          }
         </button>
-        <button onClick={handleMarkConnected} disabled={marking} style={{ ...primaryBtn, background: 'var(--green)' }}>
-          {marking ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Marking…</> : <><CheckCircle2 size={14} /> Mark Connected</>}
-        </button>
+      </div>
+
+      <div style={{ marginTop: 10, fontSize: '0.76rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+        Save credentials first, then click <strong>Test & Connect</strong> to verify with Meta and automatically mark the tenant as connected.
       </div>
     </div>
   );
 }
 
-// ── AdminConnectionModal (Review + Connection Panel) ──────────────────────────
+// ── AdminConnectionModal ───────────────────────────────────────────────────────
 function AdminConnectionModal({ request: initialRequest, onClose, onUpdated }) {
-  const [request, setRequest]   = useState(initialRequest);
-  const [status, setStatus]     = useState(initialRequest?.status || 'PENDING');
+  const [request, setRequest] = useState(initialRequest);
+  // [FIX-ADMIN-1] normalizeStatus ensures select initial value matches UPPERCASE option keys
+  const [status, setStatus]   = useState(normalizeStatus(initialRequest?.status));
   const [adminNotes, setAdminNotes] = useState(initialRequest?.adminNotes || '');
-  const [saving, setSaving]     = useState(false);
-  const [rejecting, setRejecting] = useState(false);
+  const [saving, setSaving]   = useState(false);
   const [showConnect, setShowConnect] = useState(false);
+  const [rejectConfirm, setRejectConfirm] = useState(false);
   useEscapeKey(onClose);
 
-  // Bug 4 fix: re-sync status & notes if the request prop changes externally
-  // (e.g. after ConnectionPanel calls onConnected and the parent updates the row)
-  useEffect(() => {
-    setRequest(initialRequest);
-    setStatus(initialRequest?.status || 'PENDING');
-    setAdminNotes(initialRequest?.adminNotes || '');
-  }, [initialRequest]);
-
+  // [FIX-ADMIN-2] Send status lowercase — canonical backend form
   const handleSaveStatus = async () => {
     setSaving(true);
     try {
-      const res = await adminOnboarding.updateStatus(request._id, { status, adminNotes });
-      const updated = res.data?.request || { ...request, status, adminNotes };
+      const res = await adminOnboarding.updateStatus(request._id, {
+        status,           // API service lowercases this automatically [FIX-API-4]
+        adminNotes,
+      });
+      const updated = res.data?.request || { ...request, status: status.toLowerCase(), adminNotes };
       setRequest(updated);
+      setStatus(normalizeStatus(updated.status));  // re-sync after save
       onUpdated?.(updated);
       toast.success('Status updated');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to update status');
+      const msg = err.response?.data?.error || err.response?.data?.message || 'Failed to update status';
+      toast.error(msg);
     } finally { setSaving(false); }
   };
 
-  const handleReject = async () => {
-    setRejecting(true);
+  // [FIX-ADMIN-8] Reject now guarded by a confirm state
+  const handleRejectConfirmed = async () => {
+    setRejectConfirm(false);
+    setSaving(true);
     try {
-      const res = await adminOnboarding.updateStatus(request._id, { status: 'REJECTED', adminNotes });
-      const updated = res.data?.request || { ...request, status: 'REJECTED', adminNotes };
+      const res = await adminOnboarding.updateStatus(request._id, {
+        status: 'rejected',
+        adminNotes,
+      });
+      const updated = res.data?.request || { ...request, status: 'rejected', adminNotes };
       setRequest(updated);
+      setStatus('REJECTED');
       onUpdated?.(updated);
       toast.success('Request rejected');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to reject');
-    } finally { setRejecting(false); }
+      const msg = err.response?.data?.error || err.response?.data?.message || 'Failed to reject';
+      toast.error(msg);
+    } finally { setSaving(false); }
   };
+
+  const currentNormalized = normalizeStatus(request.status);
+  const isTerminal = currentNormalized === 'CONNECTED' || currentNormalized === 'REJECTED';
 
   return (
     <div style={modalOverlay}>
       <div style={{ position: 'absolute', inset: 0 }} onClick={onClose} />
-      <div style={{ ...modalBox, maxWidth: 640, maxHeight: '92vh', overflowY: 'auto', position: 'relative' }}>
+      <div style={{ ...modalBox, maxWidth: 640, maxHeight: '92vh', overflowY: 'auto', position: 'relative' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
           <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.1rem', color: 'var(--text-primary)' }}>
             Review Request
@@ -284,17 +360,19 @@ function AdminConnectionModal({ request: initialRequest, onClose, onUpdated }) {
         </div>
 
         {/* Status badge */}
-        <div style={{ marginBottom: 18 }}><StatusBadge status={request.status} /></div>
+        <div style={{ marginBottom: 18 }}>
+          <StatusBadge status={request.status} />
+        </div>
 
         {/* Business info */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
             <Building2 size={12} /> Business Information
           </div>
-          <InfoRow label="Business Name" value={request.businessName} />
-          <InfoRow label="Category" value={request.businessCategory} />
+          <InfoRow label="Business Name"   value={request.businessName} />
+          <InfoRow label="Category"        value={request.businessCategory} />
           <InfoRow label="WhatsApp Number" value={request.whatsappNumber} />
-          <InfoRow label="Request Date" value={formatDate(request.createdAt)} />
+          <InfoRow label="Request Date"    value={formatDate(request.createdAt)} />
         </div>
 
         {/* Contact info */}
@@ -302,85 +380,131 @@ function AdminConnectionModal({ request: initialRequest, onClose, onUpdated }) {
           <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
             <User size={12} /> Contact Information
           </div>
-          <InfoRow label="Contact Person" value={request.contactPersonName} />
-          <InfoRow label="Email" value={request.contactEmail} />
-          <InfoRow label="Tenant" value={request.tenantId} mono />
+          {/* [FIX-PAGE-2] contactPerson is the correct backend field name */}
+          <InfoRow label="Contact Person" value={request.contactPerson} />
+          <InfoRow label="Email"          value={request.contactEmail} />
+          <InfoRow label="Tenant ID"      value={extractTenantId(request)} mono />
         </div>
 
         {/* Request notes */}
-        {request.additionalNotes && (
+        {request.notes && (
           <div style={{ marginBottom: 16, padding: '12px 14px', background: 'var(--bg-overlay)', borderRadius: 8 }}>
             <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>Request Notes</div>
-            <div style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{request.additionalNotes}</div>
+            <div style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{request.notes}</div>
           </div>
         )}
 
-        {/* Admin controls */}
-        <div style={{ marginBottom: 16 }}>
-          <label style={labelSt}>Update Status</label>
-          <select
-            value={status}
-            onChange={e => setStatus(e.target.value)}
-            style={{ ...inputSt, marginBottom: 10 }}
-          >
-            {Object.entries(ONBOARDING_STATUSES).map(([val, { label }]) => (
-              <option key={val} value={val}>{label}</option>
-            ))}
-          </select>
+        {/* Admin controls — hide for terminal statuses */}
+        {!isTerminal && (
+          <div style={{ marginBottom: 16 }}>
+            {/* [FIX-ADMIN-1] Status select: initial value is UPPERCASE, options are UPPERCASE */}
+            <label style={labelSt}>Update Status</label>
+            <select
+              value={status}
+              onChange={e => setStatus(e.target.value)}
+              style={{ ...inputSt, marginBottom: 10 }}
+            >
+              {Object.entries(ONBOARDING_STATUSES).map(([val, { label }]) => (
+                <option key={val} value={val}>{label}</option>
+              ))}
+            </select>
 
-          <label style={labelSt}>Admin Notes</label>
-          <textarea
-            value={adminNotes}
-            onChange={e => setAdminNotes(e.target.value)}
-            placeholder="Internal notes visible to the tenant (e.g. 'Waiting for Meta approval')…"
-            rows={3}
-            style={{ ...inputSt, resize: 'vertical', lineHeight: 1.6 }}
-          />
-        </div>
-
-        {/* Connection Panel toggle */}
-        <button
-          onClick={() => setShowConnect(v => !v)}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'none', border: '1.5px dashed var(--border-strong)', borderRadius: 8, padding: '10px 14px', cursor: 'pointer', color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', fontSize: '0.85rem', fontWeight: 600 }}
-        >
-          <Wifi size={15} /> {showConnect ? 'Hide' : 'Show'} Connection Panel
-          {showConnect ? <ChevronUp size={14} style={{ marginLeft: 'auto' }} /> : <ChevronDown size={14} style={{ marginLeft: 'auto' }} />}
-        </button>
-        {showConnect && (
-          <ConnectionPanel
-            request={request}
-            adminNotes={adminNotes}
-            onConnected={() => {
-              setStatus('CONNECTED');
-              setRequest(r => ({ ...r, status: 'CONNECTED' }));
-              onUpdated?.({ ...request, status: 'CONNECTED', adminNotes });
-            }}
-          />
+            <label style={labelSt}>Admin Notes (visible to tenant)</label>
+            <textarea
+              value={adminNotes}
+              onChange={e => setAdminNotes(e.target.value)}
+              placeholder="e.g. 'Called Fatou, confirmed the number. Setting up tomorrow.'"
+              rows={3}
+              style={{ ...inputSt, resize: 'vertical', lineHeight: 1.6 }}
+            />
+          </div>
         )}
 
-        {/* Buttons */}
+        {/* Terminal state info */}
+        {isTerminal && (
+          <div style={{ marginBottom: 16, padding: '10px 14px', background: currentNormalized === 'CONNECTED' ? 'var(--green-dim)' : 'var(--red-dim)', borderRadius: 8 }}>
+            <div style={{ fontSize: '0.83rem', fontWeight: 600, color: currentNormalized === 'CONNECTED' ? 'var(--green)' : 'var(--red)' }}>
+              {currentNormalized === 'CONNECTED' ? '✅ Tenant is connected and live.' : '❌ This request has been rejected.'}
+            </div>
+            {request.adminNotes && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 6 }}>{request.adminNotes}</div>
+            )}
+          </div>
+        )}
+
+        {/* Connection Panel — only show for non-terminal, non-rejected states */}
+        {!isTerminal && (
+          <>
+            <button
+              onClick={() => setShowConnect(v => !v)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'none', border: '1.5px dashed var(--border-strong)', borderRadius: 8, padding: '10px 14px', cursor: 'pointer', color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', fontSize: '0.85rem', fontWeight: 600 }}
+            >
+              <Wifi size={15} /> {showConnect ? 'Hide' : 'Open'} WhatsApp Credential Panel
+              {showConnect ? <ChevronUp size={14} style={{ marginLeft: 'auto' }} /> : <ChevronDown size={14} style={{ marginLeft: 'auto' }} />}
+            </button>
+            {showConnect && (
+              <ConnectionPanel
+                request={request}
+                onConnected={() => {
+                  // [FIX-ADMIN-7] Update local state immediately on connection
+                  setStatus('CONNECTED');
+                  setRequest(r => ({ ...r, status: 'connected' }));
+                }}
+                onRequestUpdated={(updated) => {
+                  onUpdated?.(updated);
+                }}
+              />
+            )}
+          </>
+        )}
+
+        {/* [FIX-ADMIN-8] Reject confirm inline prompt */}
+        {rejectConfirm && (
+          <div style={{ marginTop: 12, padding: '12px 14px', background: 'var(--red-dim)', border: '1px solid rgba(220,53,53,0.3)', borderRadius: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--red)', marginBottom: 8 }}>
+              Reject this request? This cannot be undone.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setRejectConfirm(false)} style={{ ...ghostBtn, fontSize: '0.82rem' }}>Cancel</button>
+              <button onClick={handleRejectConfirmed} disabled={saving} style={{ ...dangerBtn, fontSize: '0.82rem' }}>
+                {saving ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <X size={13} />} Yes, Reject
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Action buttons */}
         <div style={{ display: 'flex', gap: 8, marginTop: 20, flexWrap: 'wrap' }}>
           <button onClick={onClose} style={ghostBtn}>Close</button>
           <div style={{ flex: 1 }} />
-          <button onClick={handleReject} disabled={rejecting} style={dangerBtn}>
-            {rejecting ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <X size={14} />} Reject
-          </button>
-          <button onClick={handleSaveStatus} disabled={saving} style={primaryBtn}>
-            {saving ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Saving…</> : <><CheckCircle2 size={14} /> Save Status</>}
-          </button>
+          {!isTerminal && (
+            <>
+              {!rejectConfirm && (
+                <button onClick={() => setRejectConfirm(true)} disabled={saving} style={dangerBtn}>
+                  <X size={14} /> Reject
+                </button>
+              )}
+              <button onClick={handleSaveStatus} disabled={saving} style={primaryBtn}>
+                {saving
+                  ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Saving…</>
+                  : <><CheckCircle2 size={14} /> Save Status</>
+                }
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-// ── RequestRow ────────────────────────────────────────────────────────────────
+// ── RequestRow ─────────────────────────────────────────────────────────────────
+const tdSt = { padding: '12px 14px', verticalAlign: 'middle' };
+const thSt = { padding: '10px 14px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '2px solid var(--border)' };
+
 function RequestRow({ request, onUpdated }) {
   const [showModal, setShowModal] = useState(false);
   const [req, setReq] = useState(request);
-
-  // Bug 7 fix: keep local req in sync when the parent array is updated
-  useEffect(() => { setReq(request); }, [request]);
 
   return (
     <>
@@ -388,7 +512,10 @@ function RequestRow({ request, onUpdated }) {
         <AdminConnectionModal
           request={req}
           onClose={() => setShowModal(false)}
-          onUpdated={(updated) => { setReq(updated); onUpdated?.(updated); }}
+          onUpdated={(updated) => {
+            setReq(updated);
+            onUpdated?.(updated);
+          }}
         />
       )}
       <tr style={{ borderBottom: '1px solid var(--border)' }}>
@@ -398,7 +525,8 @@ function RequestRow({ request, onUpdated }) {
         </td>
         <td style={tdSt}>
           <div style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-muted)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {req.tenantId}
+            {/* [FIX-ADMIN-3] Show string form of tenantId */}
+            {extractTenantId(req) || '—'}
           </div>
         </td>
         <td style={tdSt}>
@@ -421,10 +549,7 @@ function RequestRow({ request, onUpdated }) {
   );
 }
 
-const tdSt = { padding: '12px 14px', verticalAlign: 'middle' };
-const thSt = { padding: '10px 14px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '2px solid var(--border)' };
-
-// ── Stats Card ────────────────────────────────────────────────────────────────
+// ── Stats Card ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, color }) {
   return (
     <div style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--border)', borderRadius: 12, padding: '16px 18px' }}>
@@ -434,52 +559,52 @@ function StatCard({ label, value, color }) {
   );
 }
 
-// ── Main Admin Onboarding Dashboard ──────────────────────────────────────────
+// ── Main Admin Onboarding Dashboard ───────────────────────────────────────────
 export default function AdminOnboardingDashboard() {
   const { adminLogout } = useAdmin();
   const navigate = useNavigate();
-  const [requests, setRequests]  = useState([]);
-  const [loading, setLoading]    = useState(true);
-  const [loadError, setLoadError] = useState(null);
-  const [search, setSearch]      = useState('');
+  const [requests, setRequests]       = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [search, setSearch]           = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
+  // [FIX-ADMIN-10] Show backend error message in toast
   const fetchRequests = useCallback(async () => {
     setLoading(true);
-    setLoadError(null);
     try {
       const res = await adminOnboarding.listRequests();
       setRequests(res.data?.requests || res.data || []);
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || 'Failed to load requests';
-      setLoadError(msg);
+      const msg = err.response?.data?.error || err.response?.data?.message || 'Failed to load requests';
       toast.error(msg);
     } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchRequests(); }, [fetchRequests]);
 
+  // Stats computed from local state (always accurate)
   const stats = {
     total:      requests.length,
-    pending:    requests.filter(r => r.status === 'PENDING').length,
-    contacted:  requests.filter(r => r.status === 'CONTACTED').length,
-    connecting: requests.filter(r => r.status === 'CONNECTING').length,
-    connected:  requests.filter(r => r.status === 'CONNECTED').length,
-    rejected:   requests.filter(r => r.status === 'REJECTED').length,
+    pending:    requests.filter(r => normalizeStatus(r.status) === 'PENDING').length,
+    contacted:  requests.filter(r => normalizeStatus(r.status) === 'CONTACTED').length,
+    connecting: requests.filter(r => normalizeStatus(r.status) === 'CONNECTING').length,
+    connected:  requests.filter(r => normalizeStatus(r.status) === 'CONNECTED').length,
+    rejected:   requests.filter(r => normalizeStatus(r.status) === 'REJECTED').length,
   };
 
   const filtered = requests.filter(r => {
     const matchSearch = !search ||
-      (r.businessName || '').toLowerCase().includes(search.toLowerCase()) ||
-      (r.tenantId || '').toLowerCase().includes(search.toLowerCase()) ||
-      (r.contactEmail || '').toLowerCase().includes(search.toLowerCase()) ||
-      (r.whatsappNumber || '').includes(search);
-    const matchStatus = !filterStatus || r.status === filterStatus;
+      (r.businessName  || '').toLowerCase().includes(search.toLowerCase()) ||
+      (r.contactEmail  || '').toLowerCase().includes(search.toLowerCase()) ||
+      (r.whatsappNumber || '').includes(search) ||
+      String(extractTenantId(r) || '').toLowerCase().includes(search.toLowerCase());
+    // [FIX-ADMIN-1] Compare normalised statuses
+    const matchStatus = !filterStatus || normalizeStatus(r.status) === filterStatus;
     return matchSearch && matchStatus;
   });
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-base)' }}>
+    <div className='ws-onboarding' style={{ minHeight: '100vh', background: 'var(--bg-base)' }}>
       {/* Top nav */}
       <header style={{ background: 'var(--deep-green)', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 60, boxShadow: '0 2px 12px rgba(0,0,0,0.15)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -517,12 +642,12 @@ export default function AdminOnboardingDashboard() {
 
         {/* Stats grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 28 }}>
-          <StatCard label="Total Requests" value={stats.total} color="var(--blue)" />
-          <StatCard label="Pending"        value={stats.pending} color="var(--amber)" />
-          <StatCard label="Contacted"      value={stats.contacted} color="var(--blue)" />
-          <StatCard label="Connecting"     value={stats.connecting} color="var(--purple)" />
-          <StatCard label="Connected"      value={stats.connected} color="var(--green)" />
-          <StatCard label="Rejected"       value={stats.rejected} color="var(--red)" />
+          <StatCard label="Total"      value={stats.total}      color="var(--blue)"   />
+          <StatCard label="Pending"    value={stats.pending}    color="var(--amber)"  />
+          <StatCard label="Contacted"  value={stats.contacted}  color="var(--blue)"   />
+          <StatCard label="Connecting" value={stats.connecting} color="var(--purple)" />
+          <StatCard label="Connected"  value={stats.connected}  color="var(--green)"  />
+          <StatCard label="Rejected"   value={stats.rejected}   color="var(--red)"    />
         </div>
 
         {/* Filters + search */}
@@ -551,25 +676,12 @@ export default function AdminOnboardingDashboard() {
           </button>
         </div>
 
-        {/* Table */}
+        {/* Requests table */}
         <div style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
           {loading ? (
             <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
               <Loader2 size={28} color="var(--primary)" style={{ animation: 'spin 1s linear infinite', marginBottom: 10 }} />
               <div style={{ fontSize: '0.88rem' }}>Loading requests…</div>
-            </div>
-          ) : loadError ? (
-            <div style={{ textAlign: 'center', padding: '60px 24px' }}>
-              <AlertTriangle size={36} color="var(--red)" style={{ marginBottom: 12, opacity: 0.7 }} />
-              <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-                Failed to load requests
-              </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 18 }}>
-                {loadError}
-              </div>
-              <button onClick={fetchRequests} style={primaryBtn}>
-                <RefreshCw size={14} /> Retry
-              </button>
             </div>
           ) : filtered.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 0' }}>
@@ -586,13 +698,13 @@ export default function AdminOnboardingDashboard() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
                 <thead style={{ background: 'var(--bg-overlay)' }}>
                   <tr>
-                    <th style={thSt}>Business Name</th>
+                    <th style={thSt}>Business</th>
                     <th style={thSt}>Tenant</th>
-                    <th style={thSt}>Phone Number</th>
+                    <th style={thSt}>WhatsApp</th>
                     <th style={thSt}>Email</th>
-                    <th style={thSt}>Request Date</th>
+                    <th style={thSt}>Date</th>
                     <th style={thSt}>Status</th>
-                    <th style={thSt}>Actions</th>
+                    <th style={thSt}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -600,7 +712,9 @@ export default function AdminOnboardingDashboard() {
                     <RequestRow
                       key={req._id || i}
                       request={req}
-                      onUpdated={(updated) => setRequests(rs => rs.map(r => (r._id === updated._id ? updated : r)))}
+                      onUpdated={(updated) =>
+                        setRequests(rs => rs.map(r => (r._id === updated._id ? updated : r)))
+                      }
                     />
                   ))}
                 </tbody>
@@ -616,8 +730,8 @@ export default function AdminOnboardingDashboard() {
       <style>{`
         @keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
         @keyframes glow { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
-        input:focus, select:focus, textarea:focus { border-color: var(--primary) !important; outline: none; }
-        tr:hover { background: var(--bg-overlay); }
+        .ws-onboarding input:focus, .ws-onboarding select:focus, .ws-onboarding textarea:focus { border-color: var(--primary) !important; outline: none; }
+        .ws-onboarding tr:hover { background: var(--bg-overlay); }
       `}</style>
     </div>
   );

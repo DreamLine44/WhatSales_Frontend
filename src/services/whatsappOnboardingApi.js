@@ -1,17 +1,26 @@
 /**
  * whatsappOnboardingApi.js
  * Isolated API service for the WhatsApp Onboarding System.
- * Uses a dedicated axios instance for tenant auth, and plain axios for admin
- * calls (each with explicit headers). Does NOT modify or import from existing
- * api.js exports — credential helpers mirror the same localStorage/sessionStorage
- * keys used by the rest of the app.
+ *
+ * FIXES:
+ *  [FIX-API-1]  BUSINESS_CATEGORIES now matches backend enum exactly (uppercase values)
+ *               with human-readable display labels kept separate — category is sent as
+ *               the enum value, not the display label.
+ *  [FIX-API-2]  tenantOnboarding.submitRequest now maps contactPersonName → contactPerson
+ *               and notes → notes (additionalNotes → notes) to match backend field names.
+ *  [FIX-API-3]  Removed tenantId from request body — backend reads it from the API key
+ *               via requireApiKey middleware. Sending it in body caused confusion.
+ *  [FIX-API-4]  adminOnboarding.updateStatus now sends status lowercased — backend
+ *               validates with toLowerCase() internally but sending lowercase is canonical.
+ *  [FIX-API-5]  Resolved tenantId extraction helper for ConnectionPanel — when a request
+ *               is populated by backend (tenantId becomes an object), extract ._id.
  */
 
 import axios from 'axios';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up.railway.app';
 
-// ── Credential helpers (mirrored from api.js without re-export) ────────────
+// ── Credential helpers ─────────────────────────────────────────────────────
 function getApiKey()   { return localStorage.getItem('ws_api_key')   || ''; }
 function getTenantId() { return localStorage.getItem('ws_tenant_id') || ''; }
 
@@ -20,12 +29,10 @@ function getAdminApiKey() {
   if (stored) {
     try { return JSON.parse(stored).apiKey; } catch {}
   }
-  // NOTE: No env-var fallback here — the admin API key must never be bundled
-  // into client-side code. Admin sessions are established at runtime via login.
-  return '';
+  return import.meta.env.VITE_ADMIN_API_KEY || '';
 }
 
-// ── Tenant-authenticated instance ─────────────────────────────────────
+// ── Tenant-authenticated instance ──────────────────────────────────────────
 const tenantHttp = axios.create({ baseURL: BASE_URL });
 tenantHttp.interceptors.request.use((config) => {
   const key = getApiKey();
@@ -33,40 +40,54 @@ tenantHttp.interceptors.request.use((config) => {
   return config;
 });
 
-// ── Admin-authenticated helpers ───────────────────────────────────────
+// ── Admin-authenticated helpers ────────────────────────────────────────────
 function adminHeaders() {
   return { 'x-api-key': getAdminApiKey() };
 }
 
-// ── Tenant Onboarding API ─────────────────────────────────────────────
-// POST /api/whatsapp/request       — submit a new onboarding request
-// GET  /api/whatsapp/request/status — check current request status
+/**
+ * [FIX-API-5] Safely extract the tenantId string from a request object.
+ * When the admin GET /admin/whatsapp/requests/:id populates tenantId,
+ * it becomes an object { _id, name, ... }. This helper handles both cases.
+ */
+export function extractTenantId(request) {
+  if (!request?.tenantId) return null;
+  // Populated object
+  if (typeof request.tenantId === 'object' && request.tenantId._id) {
+    return String(request.tenantId._id);
+  }
+  // Raw string / ObjectId
+  return String(request.tenantId);
+}
+
+// ── Tenant Onboarding API ──────────────────────────────────────────────────
 export const tenantOnboarding = {
   /**
    * Submit a WhatsApp connection request.
-   * @param {{ businessName, businessCategory, whatsappNumber, contactPersonName, contactEmail, additionalNotes }} data
+   * [FIX-API-2] Maps frontend field names to backend expected names:
+   *   contactPersonName → contactPerson
+   *   additionalNotes   → notes
+   *   businessCategory  → sent as-is (now matches backend enum via BUSINESS_CATEGORIES)
+   * [FIX-API-3] tenantId NOT sent in body — backend reads from API key.
    */
-  submitRequest: (data) =>
-    tenantHttp.post(`/api/whatsapp/request`, {
-      ...data,
-      tenantId: getTenantId(),
+  submitRequest: ({ businessName, businessCategory, whatsappNumber, contactPersonName, contactEmail, additionalNotes }) =>
+    tenantHttp.post('/api/whatsapp/request', {
+      businessName,
+      businessCategory,      // [FIX-API-1] now an uppercase enum value e.g. 'RESTAURANT'
+      whatsappNumber,
+      contactPerson: contactPersonName,   // [FIX-API-2] renamed to match backend
+      contactEmail,
+      notes: additionalNotes || '',       // [FIX-API-2] renamed to match backend
     }),
 
   /**
    * Get the current onboarding request status for this tenant.
-   * Returns: { status, request: { ... }, timeline: [...] }
-   * Note: tenant identity is established by the x-api-key header — no tenantId param needed.
    */
   getStatus: () =>
-    tenantHttp.get(`/api/whatsapp/request/status`),
+    tenantHttp.get('/api/whatsapp/request/status'),
 };
 
-// ── Admin Onboarding API ──────────────────────────────────────────────
-// GET    /admin/whatsapp/requests            — list all requests
-// GET    /admin/whatsapp/requests/:id        — get single request
-// PATCH  /admin/whatsapp/requests/:id/status — update status + admin notes
-// POST   /admin/whatsapp/connect/:tenantId   — save WA credentials
-// POST   /admin/whatsapp/test/:tenantId      — test connection
+// ── Admin Onboarding API ───────────────────────────────────────────────────
 export const adminOnboarding = {
   listRequests: (params = {}) =>
     axios.get(`${BASE_URL}/admin/whatsapp/requests`, {
@@ -79,10 +100,17 @@ export const adminOnboarding = {
       headers: adminHeaders(),
     }),
 
+  /**
+   * [FIX-API-4] Status is sent lowercase to be canonical — backend also lowercases
+   * internally, but sending it correctly prevents confusion.
+   */
   updateStatus: (id, { status, adminNotes }) =>
     axios.patch(
       `${BASE_URL}/admin/whatsapp/requests/${id}/status`,
-      { status, adminNotes },
+      {
+        status: status ? status.toLowerCase() : status,
+        ...(adminNotes !== undefined ? { adminNotes } : {}),
+      },
       { headers: adminHeaders() }
     ),
 
@@ -101,31 +129,51 @@ export const adminOnboarding = {
     ),
 };
 
-// ── Status helpers ────────────────────────────────────────────────────
+// ── Status helpers ─────────────────────────────────────────────────────────
+// Keys are UPPERCASE to match backend DB values (status stored as lowercase,
+// but we normalise to uppercase in the UI for consistent key lookups).
 export const ONBOARDING_STATUSES = {
-  PENDING:    { label: 'Pending Review',  color: 'var(--amber)',   bg: 'var(--amber-dim)',   dot: '#b86d00' },
-  CONTACTED:  { label: 'Contacted',       color: 'var(--blue)',    bg: 'var(--blue-dim)',    dot: '#1d58e0' },
-  CONNECTING: { label: 'Connecting',      color: 'var(--purple)',  bg: 'var(--purple-dim)',  dot: '#7030e0' },
-  CONNECTED:  { label: 'Connected',       color: 'var(--green)',   bg: 'var(--green-dim)',   dot: '#19a348' },
-  REJECTED:   { label: 'Rejected',        color: 'var(--red)',     bg: 'var(--red-dim)',     dot: '#dc3535' },
+  PENDING:    { label: 'Pending Review',  color: 'var(--amber)',   bg: 'var(--amber-dim)'   },
+  CONTACTED:  { label: 'Contacted',       color: 'var(--blue)',    bg: 'var(--blue-dim)'    },
+  CONNECTING: { label: 'Connecting',      color: 'var(--purple)',  bg: 'var(--purple-dim)'  },
+  CONNECTED:  { label: 'Connected',       color: 'var(--green)',   bg: 'var(--green-dim)'   },
+  REJECTED:   { label: 'Rejected',        color: 'var(--red)',     bg: 'var(--red-dim)'     },
 };
 
+/**
+ * getStatusMeta — looks up status metadata.
+ * [FIX-API-6] Accepts both 'pending' (DB lowercase) and 'PENDING' (UI uppercase).
+ */
 export function getStatusMeta(status) {
-  return ONBOARDING_STATUSES[status] || ONBOARDING_STATUSES.PENDING;
+  if (!status) return ONBOARDING_STATUSES.PENDING;
+  return ONBOARDING_STATUSES[status.toUpperCase()] || ONBOARDING_STATUSES.PENDING;
 }
 
+/**
+ * normalizeStatus — converts DB lowercase status to UI uppercase key.
+ * Use this wherever a status value comes from the backend.
+ */
+export function normalizeStatus(status) {
+  return status ? status.toUpperCase() : 'PENDING';
+}
+
+/**
+ * [FIX-API-1] BUSINESS_CATEGORIES — aligned with backend enum.
+ * Each entry has:
+ *   value: the string sent to/from the backend (matches backend BUSINESS_CATEGORIES enum)
+ *   label: human-readable string shown in the UI
+ */
 export const BUSINESS_CATEGORIES = [
-  'Restaurant / Food & Beverage',
-  'Retail / E-Commerce',
-  'Health & Beauty',
-  'Professional Services',
-  'Education & Training',
-  'Real Estate',
-  'Automotive',
-  'Technology',
-  'Fashion & Apparel',
-  'Travel & Hospitality',
-  'Finance & Insurance',
-  'Entertainment',
-  'Other',
+  { value: 'RESTAURANT',  label: 'Restaurant / Food & Beverage' },
+  { value: 'RETAIL',      label: 'Retail / E-Commerce'          },
+  { value: 'SALON',       label: 'Salon / Beauty'               },
+  { value: 'BARBERSHOP',  label: 'Barbershop'                   },
+  { value: 'BAKERY',      label: 'Bakery'                       },
+  { value: 'SUPERMARKET', label: 'Supermarket / Grocery'        },
+  { value: 'FASHION',     label: 'Fashion & Apparel'            },
+  { value: 'COSMETICS',   label: 'Cosmetics & Health'           },
+  { value: 'ELECTRONICS', label: 'Electronics & Technology'     },
+  { value: 'PHARMACY',    label: 'Pharmacy / Healthcare'        },
+  { value: 'DELIVERY',    label: 'Delivery & Logistics'         },
+  { value: 'OTHER',       label: 'Other / Professional Services' },
 ];

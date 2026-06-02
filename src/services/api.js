@@ -508,17 +508,7 @@ export const adminApi = {
   deleteTenant: (id) =>
     axios.delete(`${BASE_URL}/admin/tenants/${id}`, { headers: adminHeaders() }),
 
-  // Regenerate API key — calls PATCH /admin/tenants/:id with regenerateKey:true
-  // The backend tenantController updateTenant does NOT support this yet — this is a stub
-  // that sends the request. The backend will need a dedicated endpoint or flag to support it.
-  // For now it resolves gracefully with an explanatory error so the UI doesn't crash.
-  regenerateKey: async (id) => {
-    try {
-      return await axios.patch(`${BASE_URL}/admin/tenants/${id}`, { _regenerateApiKey: true }, { headers: adminHeaders() });
-    } catch (err) {
-      // Surface as a clear user-facing error rather than a silent crash
-      const msg = err.response?.data?.error || 'API key regeneration is not yet supported by the backend. Contact your system administrator.';
-      throw { response: { data: { error: msg } } };
-    }
-  },
+  // Regenerate API key — POST /admin/tenants/:id/regen-key
+  regenerateKey: (id) =>
+    axios.post(`${BASE_URL}/admin/tenants/${id}/regen-key`, {}, { headers: adminHeaders() }),
 };

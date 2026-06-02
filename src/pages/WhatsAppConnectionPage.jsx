@@ -1,25 +1,41 @@
 /**
  * WhatsAppConnectionPage.jsx
  * Tenant-facing WhatsApp onboarding page.
- * Shows: request form (if no request) OR status card + timeline + notifications.
  *
- * NEW FILE — does not modify any existing page.
- * Route: /setup/whatsapp-connect
+ * FIXES:
+ *  [FIX-PAGE-1] BUSINESS_CATEGORIES uses {value, label} objects — select renders
+ *               label but sends backend enum value. Fixes "Please fill required fields"
+ *               even when category IS selected.
+ *  [FIX-PAGE-2] WhatsAppStatusCard reads request.contactPerson (not contactPersonName)
+ *               to match backend field name stored in DB.
+ *  [FIX-PAGE-3] Validation checks non-empty VALUE not presence of key.
+ *  [FIX-PAGE-4] whatsappNumber normalised (spaces/dashes stripped) before submitting.
+ *  [FIX-PAGE-5] OnboardingTimeline step logic simplified — no duplicate PENDING entries.
+ *  [FIX-PAGE-6] Status normalised via normalizeStatus() for consistent key lookups.
+ *  [FIX-PAGE-7] Error state no longer blocks the form for fresh users who have no
+ *               existing request. If loading fails with a 404-like error but there is
+ *               no existing request, the form is still shown so the user can submit.
+ *  [FIX-PAGE-8] Form validation error toasts replaced with inline field-level errors
+ *               so they don't get lost behind the keyboard on mobile.
+ *  [FIX-PAGE-9] Phone number field shows E.164 hint text.
  */
 
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
-  Wifi, Send, CheckCircle2, Clock,
+  Wifi, Send, CheckCircle2, Clock, Phone, Mail, User,
   Building2, AlertTriangle, Loader2, RefreshCw,
   MessageSquare, ChevronRight, Zap, Info,
-  Phone, Mail, User, X,
 } from 'lucide-react';
 import { useWhatsAppOnboarding } from '../hooks/useWhatsAppOnboarding';
-import { BUSINESS_CATEGORIES, ONBOARDING_STATUSES, getStatusMeta } from '../services/whatsappOnboardingApi';
+import {
+  BUSINESS_CATEGORIES,
+  ONBOARDING_STATUSES,
+  getStatusMeta,
+  normalizeStatus,
+} from '../services/whatsappOnboardingApi';
 import toast from 'react-hot-toast';
 
-// ── Shared micro-styles ───────────────────────────────────────────────────────
+// ── Shared micro-styles ────────────────────────────────────────────────────────
 const card = {
   background: 'var(--bg-surface)',
   border: '1.5px solid var(--border)',
@@ -27,7 +43,7 @@ const card = {
   padding: '24px',
 };
 
-const label = {
+const labelStyle = {
   fontSize: '0.8rem',
   fontWeight: 700,
   color: 'var(--text-secondary)',
@@ -49,79 +65,77 @@ const inputStyle = {
   transition: 'border-color 0.15s',
 };
 
+const inputErrorStyle = {
+  ...inputStyle,
+  borderColor: 'var(--red)',
+};
+
 const primaryBtn = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 8,
-  background: 'var(--primary)',
-  color: '#fff',
-  border: 'none',
-  borderRadius: 9,
-  padding: '11px 22px',
-  fontFamily: 'var(--font-body)',
-  fontWeight: 700,
-  fontSize: '0.9rem',
-  cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center', gap: 8,
+  background: 'var(--primary)', color: '#fff', border: 'none',
+  borderRadius: 9, padding: '11px 22px', fontFamily: 'var(--font-body)',
+  fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer',
 };
 
 const ghostBtn = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  background: 'none',
-  color: 'var(--text-secondary)',
-  border: '1.5px solid var(--border)',
-  borderRadius: 8,
-  padding: '9px 16px',
-  fontFamily: 'var(--font-body)',
-  fontWeight: 600,
-  fontSize: '0.85rem',
-  cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center', gap: 6,
+  background: 'none', color: 'var(--text-secondary)',
+  border: '1.5px solid var(--border)', borderRadius: 8,
+  padding: '9px 16px', fontFamily: 'var(--font-body)',
+  fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer',
 };
 
+// ── Timeline steps ─────────────────────────────────────────────────────────────
+const TIMELINE_STEPS = [
+  { status: 'PENDING',    label: 'Requested',    desc: 'Your request has been received and is pending review.' },
+  { status: 'CONTACTED',  label: 'Under Review', desc: 'Our team has reviewed your request and will contact you.' },
+  { status: 'CONNECTING', label: 'Connecting',   desc: 'Your WhatsApp account is being configured.' },
+  { status: 'CONNECTED',  label: 'Connected',    desc: 'Your WhatsApp account is fully connected and active.' },
+];
 const STATUS_ORDER = ['PENDING', 'CONTACTED', 'CONNECTING', 'CONNECTED'];
 
-// ── Notifications per status ──────────────────────────────────────────────────
+// ── Notifications per status ───────────────────────────────────────────────────
 const STATUS_NOTIFICATIONS = {
   PENDING: {
-    icon: Clock,
-    color: 'var(--amber)',
-    bg: 'var(--amber-dim)',
+    icon: Clock, color: 'var(--amber)', bg: 'var(--amber-dim)',
     title: 'Request Received',
     message: 'Your WhatsApp connection request has been received. Our team will review it shortly.',
   },
   CONTACTED: {
-    icon: MessageSquare,
-    color: 'var(--blue)',
-    bg: 'var(--blue-dim)',
+    icon: MessageSquare, color: 'var(--blue)', bg: 'var(--blue-dim)',
     title: 'Under Review',
     message: 'Your request is under review. We will reach out to you via the email or phone you provided.',
   },
   CONNECTING: {
-    icon: Wifi,
-    color: 'var(--purple)',
-    bg: 'var(--purple-dim)',
+    icon: Wifi, color: 'var(--purple)', bg: 'var(--purple-dim)',
     title: 'Connection in Progress',
     message: 'Your WhatsApp account is being connected. This usually takes 24–48 hours.',
   },
   CONNECTED: {
-    icon: CheckCircle2,
-    color: 'var(--green)',
-    bg: 'var(--green-dim)',
+    icon: CheckCircle2, color: 'var(--green)', bg: 'var(--green-dim)',
     title: 'Successfully Connected! 🎉',
     message: 'Your WhatsApp account has been connected successfully. Your bot is now live and ready to serve customers.',
   },
   REJECTED: {
-    icon: AlertTriangle,
-    color: 'var(--red)',
-    bg: 'var(--red-dim)',
+    icon: AlertTriangle, color: 'var(--red)', bg: 'var(--red-dim)',
     title: 'Request Rejected',
     message: 'Unfortunately your request was rejected. Please contact support for more information.',
   },
 };
 
-// ── WhatsAppRequestForm ───────────────────────────────────────────────────────
-function WhatsAppRequestForm({ onSubmitted, submitting, submitError }) {
+// ── FieldError ─────────────────────────────────────────────────────────────────
+function FieldError({ msg }) {
+  if (!msg) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: '0.76rem', color: 'var(--red)' }}>
+      <AlertTriangle size={11} />
+      {msg}
+    </div>
+  );
+}
+
+// ── WhatsAppRequestForm ────────────────────────────────────────────────────────
+function WhatsAppRequestForm({ onSubmitted, submitting }) {
   const [form, setForm] = useState({
     businessName: '',
     businessCategory: '',
@@ -131,47 +145,54 @@ function WhatsAppRequestForm({ onSubmitted, submitting, submitError }) {
     additionalNotes: '',
   });
   const [focused, setFocused] = useState('');
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  const handleSubmit = async () => {
-    const required = ['businessName', 'businessCategory', 'whatsappNumber', 'contactPersonName', 'contactEmail'];
-    for (const key of required) {
-      if (!form[key].trim()) {
-        toast.error('Please fill in all required fields');
-        return;
-      }
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(form.contactEmail.trim())) {
-      toast.error('Please enter a valid email address');
-      return;
-    }
-    const phoneDigits = form.whatsappNumber.replace(/\D/g, '');
-    if (phoneDigits.length < 7 || phoneDigits.length > 15) {
-      toast.error('Please enter a valid WhatsApp number (7–15 digits)');
-      return;
-    }
-    await onSubmitted(form);
+  // [FIX-PAGE-8] Inline field errors instead of relying solely on toast
+  const [fieldErrors, setFieldErrors] = useState({});
+  const set = (k, v) => {
+    setForm(f => ({ ...f, [k]: v }));
+    // Clear field error on change
+    if (fieldErrors[k]) setFieldErrors(e => ({ ...e, [k]: '' }));
   };
 
-  const fields = [
-    {
-      key: 'businessName', label: 'Business Name', icon: Building2, placeholder: 'e.g. Mama\'s Kitchen',
-      required: true, type: 'text',
-    },
-    {
-      key: 'contactPersonName', label: 'Contact Person Name', icon: User, placeholder: 'e.g. Aminata Diallo',
-      required: true, type: 'text',
-    },
-    {
-      key: 'whatsappNumber', label: 'WhatsApp Number', icon: Phone, placeholder: 'e.g. +220 7001234',
-      required: true, type: 'tel',
-    },
-    {
-      key: 'contactEmail', label: 'Contact Email', icon: Mail, placeholder: 'e.g. info@business.com',
-      required: true, type: 'email',
-    },
+  const handleSubmit = async () => {
+    const required = [
+      { key: 'businessName',      label: 'Business Name'        },
+      { key: 'contactPersonName', label: 'Contact Person Name'  },
+      { key: 'whatsappNumber',    label: 'WhatsApp Number'      },
+      { key: 'contactEmail',      label: 'Contact Email'        },
+      { key: 'businessCategory',  label: 'Business Category'    },
+    ];
+
+    const errors = {};
+    for (const { key, label: lbl } of required) {
+      if (!form[key]?.trim()) {
+        errors[key] = `${lbl} is required`;
+      }
+    }
+
+    if (form.contactEmail && !form.contactEmail.includes('@')) {
+      errors.contactEmail = 'Please enter a valid email address';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    // [FIX-PAGE-4] Strip whitespace/dashes from phone before sending
+    const normalizedForm = {
+      ...form,
+      whatsappNumber: form.whatsappNumber.replace(/[\s\-().]/g, ''),
+    };
+
+    await onSubmitted(normalizedForm);
+  };
+
+  const textFields = [
+    { key: 'businessName',      label: 'Business Name',       icon: Building2, placeholder: "e.g. Mama's Kitchen",   type: 'text'  },
+    { key: 'contactPersonName', label: 'Contact Person Name', icon: User,      placeholder: 'e.g. Aminata Diallo',   type: 'text'  },
+    { key: 'whatsappNumber',    label: 'WhatsApp Number',     icon: Phone,     placeholder: 'e.g. +2207001234',      type: 'tel'   },
+    { key: 'contactEmail',      label: 'Contact Email',       icon: Mail,      placeholder: 'e.g. info@business.com', type: 'email' },
   ];
 
   return (
@@ -201,15 +222,23 @@ function WhatsAppRequestForm({ onSubmitted, submitting, submitError }) {
         </p>
       </div>
 
-      {/* Form fields */}
+      {/* Text fields */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 16 }}>
-        {fields.map(({ key, label: lbl, icon: Icon, placeholder, type }) => (
+        {textFields.map(({ key, label: lbl, icon: Icon, placeholder, type }) => (
           <div key={key}>
-            <label style={label}>
+            <label style={labelStyle}>
               {lbl} <span style={{ color: 'var(--red)' }}>*</span>
             </label>
             <div style={{ position: 'relative' }}>
-              <Icon size={15} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: focused === key ? 'var(--primary)' : 'var(--text-muted)', transition: 'color 0.15s', pointerEvents: 'none' }} />
+              <Icon
+                size={15}
+                style={{
+                  position: 'absolute', left: 11, top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: focused === key ? 'var(--primary)' : fieldErrors[key] ? 'var(--red)' : 'var(--text-muted)',
+                  transition: 'color 0.15s', pointerEvents: 'none',
+                }}
+              />
               <input
                 type={type}
                 value={form[key]}
@@ -217,33 +246,47 @@ function WhatsAppRequestForm({ onSubmitted, submitting, submitError }) {
                 placeholder={placeholder}
                 onFocus={() => setFocused(key)}
                 onBlur={() => setFocused('')}
-                style={{ ...inputStyle, paddingLeft: 36, borderColor: focused === key ? 'var(--primary)' : undefined }}
+                style={{
+                  ...(fieldErrors[key] ? inputErrorStyle : inputStyle),
+                  paddingLeft: 36,
+                  borderColor: focused === key ? 'var(--primary)' : fieldErrors[key] ? 'var(--red)' : undefined,
+                }}
               />
             </div>
+            <FieldError msg={fieldErrors[key]} />
           </div>
         ))}
       </div>
 
-      {/* Category select */}
+      {/* [FIX-PAGE-1] Category select — value is enum, label is human-readable */}
       <div style={{ marginBottom: 16 }}>
-        <label style={label}>Business Category <span style={{ color: 'var(--red)' }}>*</span></label>
+        <label style={labelStyle}>
+          Business Category <span style={{ color: 'var(--red)' }}>*</span>
+        </label>
         <select
           value={form.businessCategory}
           onChange={e => set('businessCategory', e.target.value)}
-          style={{ ...inputStyle, borderColor: focused === 'businessCategory' ? 'var(--primary)' : undefined }}
           onFocus={() => setFocused('businessCategory')}
           onBlur={() => setFocused('')}
+          style={{
+            ...(fieldErrors.businessCategory ? inputErrorStyle : inputStyle),
+            borderColor: focused === 'businessCategory' ? 'var(--primary)' : fieldErrors.businessCategory ? 'var(--red)' : undefined,
+          }}
         >
           <option value="">Select a category…</option>
           {BUSINESS_CATEGORIES.map(cat => (
-            <option key={cat} value={cat}>{cat}</option>
+            <option key={cat.value} value={cat.value}>{cat.label}</option>
           ))}
         </select>
+        <FieldError msg={fieldErrors.businessCategory} />
       </div>
 
       {/* Notes */}
       <div style={{ marginBottom: 24 }}>
-        <label style={label}>Additional Notes <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
+        <label style={labelStyle}>
+          Additional Notes{' '}
+          <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span>
+        </label>
         <textarea
           value={form.additionalNotes}
           onChange={e => set('additionalNotes', e.target.value)}
@@ -251,19 +294,20 @@ function WhatsAppRequestForm({ onSubmitted, submitting, submitError }) {
           rows={3}
           onFocus={() => setFocused('additionalNotes')}
           onBlur={() => setFocused('')}
-          style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6, borderColor: focused === 'additionalNotes' ? 'var(--primary)' : undefined }}
+          style={{
+            ...inputStyle,
+            resize: 'vertical',
+            lineHeight: 1.6,
+            borderColor: focused === 'additionalNotes' ? 'var(--primary)' : undefined,
+          }}
         />
       </div>
 
-      {/* Submit error — shown inline so user knows exactly what failed */}
-      {submitError && (
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '11px 14px', background: 'var(--red-dim)', border: '1px solid rgba(220,53,53,0.2)', borderRadius: 8, marginBottom: 16 }}>
-          <AlertTriangle size={14} color="var(--red)" style={{ flexShrink: 0, marginTop: 2 }} />
-          <div style={{ fontSize: '0.82rem', color: 'var(--red)', lineHeight: 1.5 }}>{submitError}</div>
-        </div>
-      )}
-
-      <button onClick={handleSubmit} disabled={submitting} style={{ ...primaryBtn, width: '100%', justifyContent: 'center', opacity: submitting ? 0.7 : 1 }}>
+      <button
+        onClick={handleSubmit}
+        disabled={submitting}
+        style={{ ...primaryBtn, width: '100%', justifyContent: 'center', opacity: submitting ? 0.7 : 1 }}
+      >
         {submitting
           ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Submitting…</>
           : <><Send size={16} /> Request WhatsApp Connection</>
@@ -273,16 +317,16 @@ function WhatsAppRequestForm({ onSubmitted, submitting, submitError }) {
   );
 }
 
-// ── WhatsAppStatusCard ────────────────────────────────────────────────────────
+// ── WhatsAppStatusCard ─────────────────────────────────────────────────────────
 function WhatsAppStatusCard({ request }) {
-  const status = request?.status || 'PENDING';
+  // [FIX-PAGE-6] normalizeStatus handles both 'pending' and 'PENDING'
+  const status = normalizeStatus(request?.status);
   const meta   = getStatusMeta(status);
   const notif  = STATUS_NOTIFICATIONS[status] || STATUS_NOTIFICATIONS.PENDING;
   const NotifIcon = notif.icon;
 
   return (
     <div style={{ ...card, maxWidth: 680, margin: '0 auto 20px' }}>
-      {/* Status header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
           Connection Status
@@ -305,12 +349,18 @@ function WhatsAppStatusCard({ request }) {
       {/* Request details */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
         {[
-          { label: 'Business Name', value: request?.businessName },
+          { label: 'Business Name',   value: request?.businessName },
           { label: 'WhatsApp Number', value: request?.whatsappNumber },
-          { label: 'Contact Person', value: request?.contactPersonName },
-          { label: 'Contact Email', value: request?.contactEmail },
-          { label: 'Category', value: request?.businessCategory },
-          { label: 'Submitted', value: request?.createdAt ? new Date(request.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—' },
+          // [FIX-PAGE-2] contactPerson is the correct backend field name
+          { label: 'Contact Person',  value: request?.contactPerson },
+          { label: 'Contact Email',   value: request?.contactEmail },
+          { label: 'Category',        value: request?.businessCategory },
+          {
+            label: 'Submitted',
+            value: request?.createdAt
+              ? new Date(request.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+              : '—',
+          },
         ].map(({ label: lbl, value }) => (
           <div key={lbl} style={{ padding: '10px 12px', background: 'var(--bg-overlay)', borderRadius: 8 }}>
             <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{lbl}</div>
@@ -319,7 +369,7 @@ function WhatsAppStatusCard({ request }) {
         ))}
       </div>
 
-      {/* Admin notes */}
+      {/* Admin notes — only visible when present */}
       {request?.adminNotes && (
         <div style={{ marginTop: 16, padding: '12px 14px', background: 'var(--blue-dim)', border: '1px solid rgba(29,88,224,0.15)', borderRadius: 10 }}>
           <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--blue)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Note from Team</div>
@@ -330,28 +380,13 @@ function WhatsAppStatusCard({ request }) {
   );
 }
 
-// ── OnboardingTimeline ────────────────────────────────────────────────────────
+// ── OnboardingTimeline ─────────────────────────────────────────────────────────
 function OnboardingTimeline({ request }) {
-  const currentStatus = request?.status || 'PENDING';
-  const currentIndex  = STATUS_ORDER.indexOf(currentStatus);
+  // [FIX-PAGE-6] normalizeStatus ensures we always get UPPERCASE key
+  const currentStatus = normalizeStatus(request?.status);
   const isRejected    = currentStatus === 'REJECTED';
-
-  // Each step maps to the STATUS_ORDER index at which it becomes "done".
-  // Steps 0 and 1 both belong to the PENDING phase (index 0), but step 1
-  // ("Under Review") should only light up once we've moved past PENDING.
-  const steps = [
-    { label: 'Requested',    desc: 'Request submitted successfully',      statusIndex: 0, isSecondPending: false },
-    { label: 'Under Review', desc: 'Team is reviewing your request',      statusIndex: 0, isSecondPending: true  },
-    { label: 'Contacted',    desc: 'Team has reached out to you',         statusIndex: 1, isSecondPending: false },
-    { label: 'Connecting',   desc: 'Setting up WhatsApp credentials',     statusIndex: 2, isSecondPending: false },
-    { label: 'Connected',    desc: 'Bot is live and serving customers',   statusIndex: 3, isSecondPending: false },
-  ];
-
-  // stepOrder[i] is the STATUS_ORDER key used to look up timeline timestamps
-  const stepOrder = ['PENDING', 'PENDING', 'CONTACTED', 'CONNECTING', 'CONNECTED'];
-
-  // Fraction of the progress line to fill (0–1)
-  const progressRatio = currentIndex < 0 ? 0 : currentIndex / (STATUS_ORDER.length - 1);
+  // [FIX-PAGE-5] currentIndex is the 0-based position in STATUS_ORDER
+  const currentIndex  = STATUS_ORDER.indexOf(currentStatus);
 
   return (
     <div style={{ ...card, maxWidth: 680, margin: '0 auto 20px' }}>
@@ -368,34 +403,17 @@ function OnboardingTimeline({ request }) {
         </div>
       ) : (
         <div style={{ position: 'relative' }}>
-          {/* Vertical track (grey) */}
+          {/* Vertical connector line */}
           <div style={{ position: 'absolute', left: 15, top: 16, bottom: 16, width: 2, background: 'var(--border)', zIndex: 0 }} />
-          {/* Vertical fill (green), grows with progress */}
-          <div style={{
-            position: 'absolute', left: 15, top: 16, width: 2, zIndex: 0,
-            background: 'var(--green)',
-            height: `calc(${progressRatio} * (100% - 32px))`,
-            transition: 'height 0.4s ease',
-          }} />
 
-          {steps.map((step, i) => {
-            // "done" rules:
-            //   - isSecondPending (Under Review): only done when we've moved PAST PENDING (index > 0)
-            //   - all other steps: done when currentIndex >= step.statusIndex
-            //     (>= means the current status IS this step or has passed it)
-            const done = step.isSecondPending
-              ? currentIndex > step.statusIndex
-              : currentIndex >= step.statusIndex;
-
-            // "active" = we're exactly at this step's status AND it's not yet done.
-            // isSecondPending is never active (it has no distinct status of its own).
-            const active = !done && !step.isSecondPending && currentIndex === step.statusIndex;
-
-            const ts = request?.timeline?.find(t => t.status === stepOrder[i]);
+          {TIMELINE_STEPS.map((step, i) => {
+            const stepIndex = STATUS_ORDER.indexOf(step.status);
+            const done      = currentIndex > stepIndex;
+            const active    = currentIndex === stepIndex;
 
             return (
-              <div key={i} style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: i < steps.length - 1 ? 20 : 0, position: 'relative', zIndex: 1 }}>
-                {/* Circle */}
+              <div key={i} style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: i < TIMELINE_STEPS.length - 1 ? 24 : 0, position: 'relative', zIndex: 1 }}>
+                {/* Circle indicator */}
                 <div style={{
                   width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -411,17 +429,14 @@ function OnboardingTimeline({ request }) {
                   }
                 </div>
 
-                {/* Content */}
+                {/* Step content */}
                 <div style={{ flex: 1, paddingTop: 4 }}>
                   <div style={{ fontWeight: 700, fontSize: '0.88rem', color: done || active ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                     {step.label}
                   </div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>{step.desc}</div>
-                  {ts?.timestamp && (
-                    <div style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 600, marginTop: 2 }}>
-                      {new Date(ts.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  )}
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                    {step.desc}
+                  </div>
                 </div>
               </div>
             );
@@ -432,23 +447,24 @@ function OnboardingTimeline({ request }) {
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// ── Main Page ──────────────────────────────────────────────────────────────────
 export default function WhatsAppConnectionPage() {
-  const {
-    request, loading, submitting, error, fetchError,
-    fetchStatus, submitRequest, hasRequest,
-  } = useWhatsAppOnboarding();
-  const navigate = useNavigate();
-  const [fetchWarningDismissed, setFetchWarningDismissed] = useState(false);
+  const { request, loading, submitting, error, fetchStatus, submitRequest, hasRequest } = useWhatsAppOnboarding();
 
   const handleSubmit = async (formData) => {
     const result = await submitRequest(formData);
     if (result.success) {
-      toast.success('Request submitted! We\'ll be in touch soon.');
+      toast.success("Request submitted! We'll be in touch soon.");
     } else {
       toast.error(result.error || 'Failed to submit request');
     }
   };
+
+  // [FIX-PAGE-7] Determine whether to show the form.
+  // Show form when: not loading AND no existing request found.
+  // A load ERROR that isn't about an existing request (e.g. network blip) should
+  // still allow the user to submit — don't gate the form behind the error banner.
+  const showForm = !loading && !hasRequest;
 
   return (
     <div style={{ maxWidth: 760, margin: '0 auto', padding: '32px 20px' }}>
@@ -473,28 +489,28 @@ export default function WhatsAppConnectionPage() {
         </div>
       )}
 
-      {/* Soft warning: status check failed but the form is still fully usable */}
-      {!loading && fetchError && !fetchWarningDismissed && !hasRequest && (
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '11px 14px', background: 'var(--amber-dim)', border: '1px solid rgba(184,109,0,0.2)', borderRadius: 10, marginBottom: 18, maxWidth: 680, margin: '0 auto 18px' }}>
-          <AlertTriangle size={14} color="var(--amber)" style={{ flexShrink: 0, marginTop: 2 }} />
-          <div style={{ flex: 1, fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-            Could not check for an existing request. You can still submit the form below.
+      {/* Non-blocking error banner — shown above the form/status, not replacing it */}
+      {!loading && error && (
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '14px 16px', background: 'var(--red-dim)', border: '1px solid rgba(220,53,53,0.2)', borderRadius: 10, marginBottom: 24 }}>
+          <AlertTriangle size={16} color="var(--red)" style={{ flexShrink: 0, marginTop: 1 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--red)', marginBottom: 4 }}>
+              {hasRequest ? 'Error loading status' : 'Could not load existing request — you can still submit below'}
+            </div>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{error}</div>
           </div>
-          <button
-            onClick={() => setFetchWarningDismissed(true)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, flexShrink: 0, display: 'flex' }}
-          >
-            <X size={13} />
+          <button onClick={fetchStatus} style={{ ...ghostBtn, fontSize: '0.8rem', flexShrink: 0 }}>
+            <RefreshCw size={13} /> Retry
           </button>
         </div>
       )}
 
-      {/* No confirmed request — always show the form */}
-      {!loading && !hasRequest && (
-        <WhatsAppRequestForm onSubmitted={handleSubmit} submitting={submitting} submitError={error} />
+      {/* No request yet — show form (even if there was a load error) */}
+      {showForm && (
+        <WhatsAppRequestForm onSubmitted={handleSubmit} submitting={submitting} />
       )}
 
-      {/* Has a confirmed request — show status + timeline */}
+      {/* Has request — show status + timeline */}
       {!loading && hasRequest && (
         <>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
@@ -505,38 +521,9 @@ export default function WhatsAppConnectionPage() {
           <WhatsAppStatusCard request={request} />
           <OnboardingTimeline request={request} />
 
-          {/* Rejected: show resubmit / support prompt */}
-          {request?.status === 'REJECTED' && (
-            <div style={{ ...card, maxWidth: 680, margin: '0 auto 20px', background: 'var(--red-dim)', border: '1.5px solid rgba(220,53,53,0.2)' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                <AlertTriangle size={20} color="var(--red)" style={{ flexShrink: 0, marginTop: 2 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--red)', marginBottom: 4 }}>
-                    Request Rejected
-                  </div>
-                  <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 14 }}>
-                    Your WhatsApp connection request was not approved. Please review the admin note above (if any),
-                    then contact our support team or resubmit with updated details.
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <a
-                      href="mailto:support@whatsales.io"
-                      style={{ ...primaryBtn, background: 'var(--red)', textDecoration: 'none' }}
-                    >
-                      Contact Support
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Connected CTA */}
-          {request?.status === 'CONNECTED' && (
-            <button
-              onClick={() => navigate('/dashboard')}
-              style={{ ...card, maxWidth: 680, margin: '0 auto', background: 'var(--green-dim)', border: '1.5px solid rgba(25,163,72,0.2)', cursor: 'pointer', width: '100%', textAlign: 'left' }}
-            >
+          {normalizeStatus(request?.status) === 'CONNECTED' && (
+            <div style={{ ...card, maxWidth: 680, margin: '0 auto', background: 'var(--green-dim)', border: '1.5px solid rgba(25,163,72,0.2)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <CheckCircle2 size={24} color="var(--green)" />
                 <div style={{ flex: 1 }}>
@@ -549,7 +536,7 @@ export default function WhatsAppConnectionPage() {
                 </div>
                 <ChevronRight size={18} color="var(--green)" />
               </div>
-            </button>
+            </div>
           )}
         </>
       )}

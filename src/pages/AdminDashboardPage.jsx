@@ -102,7 +102,7 @@ Use your Tenant ID and API Key to access your dashboard.`;
   return (
     <div style={modalOverlay}>
       <div style={{ position: 'absolute', inset: 0 }} onClick={onClose} />
-      <div style={{ ...modalBox, maxWidth: 520, position: 'relative', textAlign: 'center' }}>
+      <div style={{ ...modalBox, maxWidth: 520, position: 'relative', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
         {/* Success icon */}
         <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'var(--green-dim)', border: '3px solid rgba(25,163,72,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
           <Check size={32} color="var(--green)" strokeWidth={2.5} />
@@ -315,7 +315,7 @@ function CreateTenantWizard({ onClose, onCreated }) {
   return (
     <div style={modalOverlay}>
       <div style={{ position: 'absolute', inset: 0 }} onClick={() => { if (!loading) onClose(); }} />
-      <div style={{ ...modalBox, maxWidth: 600, maxHeight: '92vh', overflowY: 'auto', position: 'relative' }}>
+      <div style={{ ...modalBox, maxWidth: 600, maxHeight: '92vh', overflowY: 'auto', position: 'relative' }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
@@ -525,7 +525,7 @@ function EditTenantModal({ tenant, onClose, onUpdated }) {
   return (
     <div style={modalOverlay}>
       <div style={{ position: 'absolute', inset: 0 }} onClick={() => { if (!loading) onClose(); }} />
-      <div style={{ ...modalBox, maxWidth: 560, maxHeight: '92vh', overflowY: 'auto', position: 'relative' }}>
+      <div style={{ ...modalBox, maxWidth: 560, maxHeight: '92vh', overflowY: 'auto', position: 'relative' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
           <h3 style={modalTitle}>Edit Tenant</h3>
           <button onClick={() => { if (!loading) onClose(); }} disabled={loading} style={{ ...iconBtn, opacity: loading ? 0.4 : 1 }}><X size={18} /></button>
@@ -623,7 +623,7 @@ function ConfirmModal({ open, onClose, onConfirm, title, message, confirmLabel =
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(8,18,12,0.55)', backdropFilter: 'blur(6px)' }} onClick={() => { if (!loading) onClose?.(); }} />
-      <div style={{ position: 'relative', width: '100%', maxWidth: 400, background: 'var(--bg-surface)', border: '1.5px solid var(--border)', borderRadius: 16, padding: '28px', boxShadow: 'var(--shadow-lg)' }}>
+      <div style={{ position: 'relative', width: '100%', maxWidth: 400, background: 'var(--bg-surface)', border: '1.5px solid var(--border)', borderRadius: 16, padding: '28px', boxShadow: 'var(--shadow-lg)' }} onClick={e => e.stopPropagation()}>
         <div style={{ width: 44, height: 44, borderRadius: 12, background: vb, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
           <AlertTriangle size={20} color={vc} />
         </div>
@@ -810,7 +810,7 @@ export default function AdminDashboardPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-base)' }}>
+    <div className='ws-admin' style={{ minHeight: '100vh', background: 'var(--bg-base)' }}>
       {/* Top Nav */}
       <header style={{ background: 'var(--deep-green)', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 60, boxShadow: '0 2px 12px rgba(0,0,0,0.15)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -855,8 +855,21 @@ export default function AdminDashboardPage() {
           ))}
         </div>
 
-        {/* Quick guide */}
-        {tenants.length === 0 && !loading && (
+        {/* ── WhatsApp Onboarding section (NEW) ─────────────────────────── */}
+        <div style={{ marginBottom: 24, padding: '16px 20px', background: 'var(--bg-surface)', border: '1.5px solid var(--border)', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 42, height: 42, borderRadius: 11, background: 'var(--primary-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Wifi size={20} color="var(--primary)" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', marginBottom: 2 }}>WhatsApp Onboarding</div>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Review tenant connection requests, update statuses, and configure credentials.</div>
+          </div>
+          <button onClick={() => navigate('/admin/onboarding')} style={{ ...primaryBtn, flexShrink: 0 }}>
+            Manage Requests <ArrowRight size={14} />
+          </button>
+        </div>
+
+        {/* Quick guide */}        {tenants.length === 0 && !loading && (
           <div style={{ marginBottom: 24, padding: '18px 20px', background: 'var(--primary-dim)', border: '1.5px solid var(--border-accent)', borderRadius: 14 }}>
             <div style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '0.9rem', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 7 }}>
               <Zap size={15} /> Getting started
@@ -935,9 +948,10 @@ export default function AdminDashboardPage() {
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
-        input, textarea { width: 100%; padding: 10px 13px; border: 1.5px solid var(--border); border-radius: 8px; font-family: var(--font-body); font-size: 0.9rem; background: var(--bg-surface); color: var(--text-primary); outline: none; transition: border-color 0.15s; box-sizing: border-box; }
-        input:focus, textarea:focus { border-color: var(--primary); }
-        button { cursor: pointer; font-family: var(--font-body); border: none; }
+        @keyframes glow { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
+        .ws-admin input, .ws-admin textarea { width: 100%; padding: 10px 13px; border: 1.5px solid var(--border); border-radius: 8px; font-family: var(--font-body); font-size: 0.9rem; background: var(--bg-surface); color: var(--text-primary); outline: none; transition: border-color 0.15s; box-sizing: border-box; }
+        .ws-admin input:focus, .ws-admin textarea:focus { border-color: var(--primary); }
+        .ws-admin button { cursor: pointer; font-family: var(--font-body); }
       `}</style>
     </div>
   );

@@ -1,9 +1,9 @@
-import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import {
   LayoutDashboard, ShoppingCart, CalendarCheck,
   MessageSquare, BarChart3, Wifi, Clock,
-  Bot, Building2, Menu, X, LogOut, Users, HelpCircle, Zap,
+  Bot, Building2, Menu, X, LogOut, Users, HelpCircle, Zap, Link2,
 } from 'lucide-react';
 import { useAuth } from '../../store/AuthContext';
 import { WhatsalesLogo } from '../../App';
@@ -11,12 +11,14 @@ import { getBizConfig, getNavVisibility } from '../../utils/businessConfig';
 import toast from 'react-hot-toast';
 import styles from './DashboardLayout.module.css';
 
+// FIX: Deduplicated — WhatsApp (settings page) uses Wifi, WhatsApp Connection (onboarding) uses Link2
 const NAV_SETUP = [
-  { to: '/setup/wizard',   icon: Zap,       label: 'Get Started 🚀' },
-  { to: '/setup/business', icon: Building2, label: 'Business Info' },
-  { to: '/setup/bot',      icon: Bot,       label: 'Bot Messages'  },
-  { to: '/setup/hours',    icon: Clock,     label: 'Opening Hours' },
-  { to: '/setup/whatsapp', icon: Wifi,      label: 'WhatsApp'      },
+  { to: '/setup/wizard',            icon: Zap,       label: 'Get Started 🚀'      },
+  { to: '/setup/business',          icon: Building2, label: 'Business Info'        },
+  { to: '/setup/bot',               icon: Bot,       label: 'Bot Messages'         },
+  { to: '/setup/hours',             icon: Clock,     label: 'Opening Hours'        },
+  { to: '/setup/whatsapp',          icon: Wifi,      label: 'WhatsApp'             },
+  { to: '/setup/whatsapp-connect',  icon: Link2,     label: 'WhatsApp Connection'  },
 ];
 
 export default function DashboardLayout() {
@@ -37,15 +39,15 @@ export default function DashboardLayout() {
 
   // Build dynamic main nav from business mode config
   const NAV_MAIN = [
-    { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', show: true },
-    { to: '/orders',    icon: ShoppingCart,    label: cfg.transactions.ordersNavLabel  || 'Orders',   show: vis.showOrders   },
-    { to: '/bookings',  icon: CalendarCheck,   label: cfg.transactions.bookingsNavLabel || 'Bookings', show: vis.showBookings },
-    { to: '/menu',      icon: cfg.catalog.icon, label: cfg.catalog.navLabel,   show: vis.showMenu     },
-    { to: '/services',  icon: cfg.catalog.icon, label: cfg.catalog.navLabel,   show: vis.showServices },
-    { to: '/sessions',  icon: MessageSquare,   label: 'Live Sessions', show: true },
-    { to: '/analytics', icon: BarChart3,       label: 'Analytics',     show: true },
-    { to: '/customers', icon: Users,           label: 'Customers',     show: true },
-    { to: '/faqs',      icon: HelpCircle,      label: 'Auto-Replies',  show: true },
+    { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard',                             show: true              },
+    { to: '/orders',    icon: ShoppingCart,    label: cfg.transactions?.ordersNavLabel   || 'Orders',   show: vis.showOrders   },
+    { to: '/bookings',  icon: CalendarCheck,   label: cfg.transactions?.bookingsNavLabel || 'Bookings', show: vis.showBookings },
+    { to: '/menu',      icon: cfg.catalog?.icon || Building2, label: cfg.catalog?.navLabel || 'Menu',   show: vis.showMenu     },
+    { to: '/services',  icon: cfg.catalog?.icon || Building2, label: cfg.catalog?.navLabel || 'Services', show: vis.showServices },
+    { to: '/sessions',  icon: MessageSquare,   label: 'Live Sessions',                         show: true              },
+    { to: '/analytics', icon: BarChart3,       label: 'Analytics',                             show: true              },
+    { to: '/customers', icon: Users,           label: 'Customers',                             show: true              },
+    { to: '/faqs',      icon: HelpCircle,      label: 'Auto-Replies',                          show: true              },
   ].filter(n => n.show);
 
   return (
@@ -155,8 +157,7 @@ export default function DashboardLayout() {
 
 function StatusBadge({ whatsapp }) {
   // "Bot Active" = WhatsApp is connected and the bot can reply to customers.
-  // This is distinct from tenant account status (ACTIVE/INACTIVE).
-  // Backend fix now returns whatsapp.connected on the business object.
+  // Backend returns whatsapp.connected on the business object.
   const active = !!(whatsapp?.connected || whatsapp?.phoneNumberId);
   return (
     <div style={{
@@ -170,7 +171,8 @@ function StatusBadge({ whatsapp }) {
       <span style={{
         width: 6, height: 6, borderRadius: '50%',
         background: active ? 'var(--green)' : 'var(--text-muted)',
-        animation: active ? 'glow 2s ease-in-out infinite' : 'none',
+        // FIX: animation class defined in CSS module so it renders correctly
+        animation: active ? `${styles.glow ?? 'glow'} 2s ease-in-out infinite` : 'none',
       }} />
       {active ? 'Bot Active' : 'Not Connected'}
     </div>
