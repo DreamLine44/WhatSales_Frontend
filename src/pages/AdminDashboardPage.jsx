@@ -645,12 +645,17 @@ function ConfirmModal({ open, onClose, onConfirm, title, message, confirmLabel =
 function TenantRow({ tenant, onDeleted, onUpdated }) {
   const [expanded, setExpanded] = useState(false);
   const [regening, setRegening] = useState(false);
+  const [toggling, setToggling] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [newKey, setNewKey] = useState(null);
   const [editing, setEditing] = useState(false);
   const [regenConfirm, setRegenConfirm] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const sc = statusColor(tenant.status);
+  // Local status mirrors prop so badge updates immediately on success
+  const [localStatus, setLocalStatus] = useState(tenant.status);
+  // Sync local status if parent updates the tenant (e.g. edit modal)
+  useEffect(() => { setLocalStatus(tenant.status); }, [tenant.status]);
+  const sc = statusColor(localStatus);
   const tid = tenant.tenantId || tenant._id || '—';
 
   const regenKeyConfirmed = async () => {
@@ -668,10 +673,10 @@ function TenantRow({ tenant, onDeleted, onUpdated }) {
   };
 
   const toggleStatus = async () => {
-    const next = tenant.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    const next = localStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    setToggling(true);
     try {
-      // Backend PATCH validates name + adminPhone even for status-only updates.
-      // Send the full existing payload so validation passes.
+      // Backend PATCH requires name + adminPhone on every update — send full payload.
       const payload = {
         name: tenant.name,
         adminPhone: tenant.adminPhone || '',
@@ -680,9 +685,17 @@ function TenantRow({ tenant, onDeleted, onUpdated }) {
         status: next,
       };
       const res = await adminApi.updateTenant(tenant._id || tenant.tenantId, payload);
-      onUpdated(res.data?.tenant || { ...tenant, status: next });
-      toast.success(`Tenant ${next === 'ACTIVE' ? 'activated' : 'deactivated'}`);
-    } catch (err) { toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to update status'); }
+      // Get the authoritative tenant back from the server
+      const updated = res.data?.tenant || res.data?.data || { ...tenant, status: next };
+      const confirmedStatus = updated.status || next;
+      // Update local badge immediately — don't wait for parent re-render
+      setLocalStatus(confirmedStatus);
+      // Also propagate up so parent list & stats stay in sync
+      onUpdated({ ...tenant, ...updated, status: confirmedStatus });
+      toast.success(confirmedStatus === 'ACTIVE' ? 'Tenant activated' : 'Tenant deactivated');
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to update status');
+    } finally { setToggling(false); }
   };
 
   const deleteTenantConfirmed = async () => {
@@ -716,7 +729,7 @@ function TenantRow({ tenant, onDeleted, onUpdated }) {
             {/* WhatsApp status dot */}
             <div title={hasWA ? 'WhatsApp connected' : 'WhatsApp not configured'} style={{ width: 8, height: 8, borderRadius: '50%', background: hasWA ? 'var(--green)' : 'var(--amber)' }} />
             <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: sc.bg, color: sc.text }}>
-              {tenant.status || 'UNKNOWN'}
+              {localStatus || 'UNKNOWN'}
             </span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{tenant.businessMode}</span>
             {expanded ? <ChevronUp size={16} color="var(--text-muted)" /> : <ChevronDown size={16} color="var(--text-muted)" />}
@@ -755,8 +768,13 @@ function TenantRow({ tenant, onDeleted, onUpdated }) {
               <button onClick={() => setEditing(true)} style={{ ...primaryBtn, fontSize: '0.8rem', padding: '7px 12px' }}>
                 <Hash size={13} /> Edit
               </button>
-              <button onClick={toggleStatus} style={{ ...ghostBtn, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
-                {tenant.status === 'ACTIVE' ? <><ToggleRight size={14} color="var(--green)" /> Deactivate</> : <><ToggleLeft size={14} /> Activate</>}
+              <button onClick={toggleStatus} disabled={toggling} style={{ ...ghostBtn, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', opacity: toggling ? 0.6 : 1 }}>
+                {toggling
+                  ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Updating…</>
+                  : localStatus === 'ACTIVE'
+                    ? <><ToggleRight size={14} color="var(--green)" /> Deactivate</>
+                    : <><ToggleLeft size={14} /> Activate</>
+                }
               </button>
               <button onClick={() => setRegenConfirm(true)} disabled={regening} style={{ ...ghostBtn, display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem' }}>
                 {regening ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Key size={14} />} Regen API Key
