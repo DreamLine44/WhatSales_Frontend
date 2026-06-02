@@ -670,10 +670,19 @@ function TenantRow({ tenant, onDeleted, onUpdated }) {
   const toggleStatus = async () => {
     const next = tenant.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
     try {
-      const res = await adminApi.updateTenant(tenant._id || tenant.tenantId, { status: next });
+      // Backend PATCH validates name + adminPhone even for status-only updates.
+      // Send the full existing payload so validation passes.
+      const payload = {
+        name: tenant.name,
+        adminPhone: tenant.adminPhone || '',
+        businessMode: tenant.businessMode || 'GENERIC',
+        description: tenant.description || '',
+        status: next,
+      };
+      const res = await adminApi.updateTenant(tenant._id || tenant.tenantId, payload);
       onUpdated(res.data?.tenant || { ...tenant, status: next });
       toast.success(`Tenant ${next === 'ACTIVE' ? 'activated' : 'deactivated'}`);
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed to update status'); }
+    } catch (err) { toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to update status'); }
   };
 
   const deleteTenantConfirmed = async () => {
