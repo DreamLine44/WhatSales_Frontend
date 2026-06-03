@@ -1,40 +1,38 @@
 import { createContext, useContext, useState, useCallback } from 'react';
-
-// AdminContext manages admin session state (login/logout).
-// API calls are made directly from page components using the imported adminApi.
-// Removed unused `adminApi` import — it was dead code here.
+import { adminSession, adminApi } from '../api.js';
+import axios from 'axios';
 
 const AdminContext = createContext(null);
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up.railway.app';
 
 export function AdminProvider({ children }) {
-  // sessionStorage.getItem is synchronous, so loading starts as false.
-  // We expose it anyway so ProtectedAdminRoute can guard against any future
-  // async session check without needing to touch App.jsx.
-  const [loading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() => !!adminSession.get());
+  const [loading, setLoading] = useState(false);
 
-  const [adminSession, setAdminSession] = useState(() => {
-    const stored = sessionStorage.getItem('ws_admin_session');
-    return stored ? JSON.parse(stored) : null;
-  });
-
-  const adminLogin = useCallback((apiKey) => {
-    const session = { apiKey, loginTime: Date.now() };
-    sessionStorage.setItem('ws_admin_session', JSON.stringify(session));
-    setAdminSession(session);
+  const adminLogin = useCallback(async (apiKey) => {
+    // Validate by calling listTenants — only super-admin key works
+    await axios.get(`${BASE_URL}/admin/tenants`, {
+      headers: { 'x-api-key': apiKey },
+      timeout: 10000,
+    });
+    adminSession.save(apiKey);
+    setIsAdmin(true);
   }, []);
 
   const adminLogout = useCallback(() => {
-    sessionStorage.removeItem('ws_admin_session');
-    setAdminSession(null);
+    adminSession.clear();
+    setIsAdmin(false);
   }, []);
 
-  const isAdmin = !!adminSession;
-
   return (
-    <AdminContext.Provider value={{ isAdmin, loading, adminSession, adminLogin, adminLogout }}>
+    <AdminContext.Provider value={{ isAdmin, loading, adminLogin, adminLogout }}>
       {children}
     </AdminContext.Provider>
   );
 }
 
-export const useAdmin = () => useContext(AdminContext);
+export function useAdmin() {
+  const ctx = useContext(AdminContext);
+  if (!ctx) throw new Error('useAdmin must be used inside AdminProvider');
+  return ctx;
+}

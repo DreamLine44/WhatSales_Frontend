@@ -1,275 +1,176 @@
 import { useEffect, useState } from 'react';
-import { ShoppingCart, CalendarCheck, MessageSquare, TrendingUp, AlertCircle, Zap, ArrowRight } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { analytics, orders, sessions, business as businessApi } from '../services/api';
-import { PageHeader, StatCard, Card, Spinner, Badge, Button, InfoBanner } from '../components/ui/index.jsx';
-import { useAuth } from '../store/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { ShoppingCart, Calendar, Users, MessageSquare, TrendingUp, Zap, ArrowRight } from 'lucide-react';
+import { useAuth } from '../store/AuthContext.jsx';
+import { dashApi, getModeConfig, needsBookings } from '../api.js';
+import { StatCard, Card, Btn, StatusBadge, EmptyState, Spinner } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
-import { formatCurrency } from '../utils/currency';
-import { getBizConfig } from '../utils/businessConfig';
 
-const TIP_STYLE = {
-  contentStyle: {
-    background: 'var(--bg-surface)', border: '1.5px solid var(--border)',
-    borderRadius: 10, color: 'var(--text-primary)', fontSize: 12,
-    fontFamily: 'var(--font-body)', boxShadow: 'var(--shadow-md)',
-  },
-  cursor: { stroke: 'var(--border-accent)', strokeWidth: 1 },
-};
-
-// Complete status colour map — covers all real backend statuses
-const STATUS_COLORS = {
-  confirmed:      'var(--green)',
-  completed:      'var(--green)',
-  pending:        'var(--amber)',
-  payment_failed: 'var(--red)',
-  rejected:       'var(--red)',
-  cancelled:      'var(--red)',
-};
+function QuickAction({ icon: Icon, label, to, color = 'green' }) {
+  const navigate = useNavigate();
+  const colors = { green: 'var(--primary-dim)', amber: 'var(--amber-dim)', blue: 'var(--blue-dim)' };
+  const textColors = { green: 'var(--primary)', amber: 'var(--amber)', blue: 'var(--blue)' };
+  return (
+    <button
+      onClick={() => navigate(to)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: '14px 16px', background: colors[color],
+        border: `1.5px solid ${colors[color]}`, borderRadius: 'var(--radius-lg)',
+        cursor: 'pointer', width: '100%', textAlign: 'left', transition: 'all 0.15s',
+      }}
+      onMouseEnter={e => e.currentTarget.style.opacity = '0.8'}
+      onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+    >
+      <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icon size={18} color={textColors[color]} />
+      </div>
+      <span style={{ fontSize: '0.875rem', fontWeight: 600, color: textColors[color], flex: 1 }}>{label}</span>
+      <ArrowRight size={14} color={textColors[color]} />
+    </button>
+  );
+}
 
 export default function DashboardPage() {
-  const { user, tenant } = useAuth();
-  const cfg = getBizConfig(tenant?.businessMode || 'GENERIC');
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const [stats, setStats] = useState(null);
-  const [revenue, setRevenue] = useState([]);
-  const [pendingOrders, setPendingOrders] = useState([]);
-  const [humanModeCount, setHumanModeCount] = useState(0);
-  const [biz, setBiz] = useState(null);
+  const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
+  const mode = user?.businessMode || 'RESTAURANT';
+  const modeConfig = getModeConfig(mode);
+  const hasBookings = needsBookings(mode);
 
   useEffect(() => {
-    Promise.all([
-      analytics.overview(),
-      analytics.revenue(),
-      orders.list({ status: 'pending', limit: 5 }),
-      sessions.humanModeCount(),
-      businessApi.get(),
-    ]).then(([ov, rev, ord, hm, bizRes]) => {
-      setStats(ov.data);
-      setRevenue(rev.data?.data || []);
-      setPendingOrders(ord.data?.orders || []);
-      setHumanModeCount(hm.data?.count || 0);
-      setBiz(bizRes.data?.business || null);
-    }).catch(() => toast.error('Failed to load dashboard data')).finally(() => setLoading(false));
+    dashApi.overview()
+      .then(r => setOverview(r.data || r))
+      .catch(err => toast.error(err.message || 'Failed to load dashboard'))
+      .finally(() => setLoading(false));
   }, []);
 
-  const greeting = () => {
-    const h = new Date().getHours();
-    if (h < 12) return 'Good morning';
-    if (h < 17) return 'Good afternoon';
-    return 'Good evening';
-  };
-
-  if (loading) return <Spinner />;
-
-  const isWAConnected = !!(tenant?.whatsapp?.connected || tenant?.whatsapp?.phoneNumberId || tenant?.phoneNumberId || biz?.whatsapp?.connected || biz?.whatsapp?.phoneNumberId);
+  const d = overview?.last30Days || {};
+  const whatsappActive = !!(user?.whatsapp?.connected || user?.whatsapp?.phoneNumberId);
 
   return (
     <div className="fade-in">
-      {/* WhatsApp not configured banner */}
-      {!isWAConnected && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          background: 'linear-gradient(135deg, rgba(184,109,0,0.08) 0%, rgba(184,109,0,0.04) 100%)',
-          border: '1.5px solid rgba(184,109,0,0.22)',
-          borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: 20,
-          flexWrap: 'wrap', gap: 12,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-            <AlertCircle size={18} color="var(--amber)" style={{ flexShrink: 0, marginTop: 1 }} />
-            <div>
-              <div style={{ fontWeight: 700, color: 'var(--amber)', fontSize: '0.88rem', marginBottom: 2 }}>WhatsApp not connected yet</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                Your bot won't reply to customers until your WhatsApp number is connected. Contact your WhatSales admin.
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => navigate('/setup/whatsapp')}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 14px', fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', flexShrink: 0 }}
-          >
-            View Setup <ArrowRight size={13} />
-          </button>
-        </div>
-      )}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--primary-dim)', border: '1.5px solid var(--border-accent)', borderRadius: 99, padding: '4px 12px', marginBottom: 10 }}>
-            <Zap size={13} color="var(--primary)" />
-            <span style={{ fontSize: '0.77rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Live Dashboard</span>
-          </div>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.65rem', fontWeight: 800, letterSpacing: '-0.03em' }}>
-            {greeting()}, {user?.name?.split(' ')[0] || 'there'} 👋
-          </h1>
-          <p style={{ marginTop: 5, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Here's what's happening with {cfg.label.toLowerCase()} today</p>
-        </div>
-        <Button variant="mint" onClick={() => navigate('/analytics')} style={{ gap: 6 }}>
-          View Analytics <ArrowRight size={14} />
-        </Button>
+      {/* Greeting */}
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.025em', marginBottom: 4 }}>
+          Good day, {user?.name} {modeConfig.emoji}
+        </h1>
+        <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+          Here's what's happening in the last 30 days
+        </p>
       </div>
 
-      {/* Human mode alert */}
-      {humanModeCount > 0 && (
+      {/* WhatsApp warning banner */}
+      {!whatsappActive && (
         <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          background: 'var(--amber-dim)', border: '1.5px solid rgba(217,119,6,0.25)',
-          borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: 24,
-          flexWrap: 'wrap', gap: 12,
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '14px 18px', marginBottom: 24,
+          background: 'var(--amber-dim)', border: '1.5px solid rgba(217,119,6,0.2)',
+          borderRadius: 'var(--radius-lg)',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(217,119,6,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <AlertCircle size={17} color="var(--amber)" />
-            </div>
-            <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-              <strong>{humanModeCount}</strong> customer{humanModeCount > 1 ? 's are' : ' is'} waiting — bot is silent
-            </span>
+          <Zap size={18} color="var(--amber)" style={{ flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--amber)', marginBottom: 2 }}>WhatsApp not connected</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Your AI bot won't respond to customers until WhatsApp is connected.</div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {/* FIX: was misleadingly labelled "Resume Bot" — navigates to Sessions; renamed to "Manage Sessions" */}
-            <Button size="sm" onClick={() => navigate('/sessions')}>Manage Sessions</Button>
-          </div>
+          <Btn size="sm" variant="amber" onClick={() => navigate('/setup/whatsapp')}>
+            Connect Now
+          </Btn>
         </div>
       )}
 
       {/* Stats grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))',
-        gap: 16, marginBottom: 24,
-      }}>
-        {/* Orders stat — label varies by mode */}
-        {(cfg.transactions.type === 'orders' || cfg.transactions.type === 'both') && (
-          <StatCard label={cfg.dashboard.ordersStatLabel}  value={stats?.totalOrders ?? '—'}  sub="Last 30 days"       icon={ShoppingCart} color="var(--primary)" />
-        )}
-        <StatCard label="Revenue"         value={stats?.totalRevenue ? formatCurrency(stats.totalRevenue, tenant?.payment?.currency) : '—'} sub="Confirmed payments" icon={TrendingUp} color="var(--green)" trend="up" />
-        {/* Bookings stat — only for booking/both modes */}
-        {(cfg.transactions.type === 'bookings' || cfg.transactions.type === 'both') && (
-          <StatCard label={cfg.dashboard.bookingsStatLabel} value={stats?.totalBookings ?? '—'} sub="Last 30 days"       icon={CalendarCheck} color="var(--blue)" />
-        )}
-        <StatCard label="Live Sessions" value={stats?.activeSessions ?? '—'} sub="In human mode"    icon={MessageSquare} color="var(--purple)" />
-      </div>
-
-      {/* Mode-specific tip */}
-      {cfg.dashboard.tipText && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--primary-dim)', border: '1px solid var(--border-accent)', borderRadius: 'var(--radius-md)', padding: '10px 16px', marginBottom: 20 }}>
-          <span style={{ fontSize: '1rem', flexShrink: 0 }}>{cfg.emoji}</span>
-          <span style={{ fontSize: '0.83rem', color: 'var(--primary)', lineHeight: 1.5 }}>{cfg.dashboard.tipText}</span>
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 0' }}>
+          <Spinner size={32} />
         </div>
-      )}
-
-      {/* Charts row */}
-      <div className="dashboard-charts-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 16, marginBottom: 24 }}>
-        {/* Revenue chart */}
-        <Card style={{ padding: '22px 22px 14px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18, flexWrap: 'wrap', gap: 8 }}>
-            <div>
-              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary)' }}>Revenue Trend</div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>Daily series — available when backend adds analytics endpoint</div>
-            </div>
-            <Badge label="This week" color="mint" />
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 24 }}>
+            {!hasBookings && (
+              <StatCard
+                label="Orders (30d)"
+                value={d.orders ?? 0}
+                icon={ShoppingCart}
+                color="green"
+                sub={d.orders === 0 ? 'No orders yet — bot is waiting' : `${d.orders} received`}
+              />
+            )}
+            {hasBookings && (
+              <StatCard
+                label="Bookings (30d)"
+                value={d.bookings ?? 0}
+                icon={Calendar}
+                color="green"
+                sub={d.bookings === 0 ? 'No bookings yet' : `${d.bookings} scheduled`}
+              />
+            )}
+            <StatCard
+              label="Customers"
+              value={d.customers ?? 0}
+              icon={Users}
+              color="blue"
+              sub="Total unique customers"
+            />
+            <StatCard
+              label="Revenue (30d)"
+              value={d.revenue != null ? `D ${Number(d.revenue).toFixed(0)}` : '—'}
+              icon={TrendingUp}
+              color="amber"
+              sub="Confirmed orders"
+            />
+            <StatCard
+              label="Live Sessions"
+              value={overview?.activeHumanSessions ?? 0}
+              icon={MessageSquare}
+              color="purple"
+              sub="Human-mode active"
+            />
           </div>
-          {revenue.length > 0 ? (
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={revenue} margin={{ top: 5, right: 4, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="var(--primary)" stopOpacity={0.18} />
-                    <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip {...TIP_STYLE} />
-                <Area type="monotone" dataKey="revenue" stroke="var(--primary)" strokeWidth={2.5} fill="url(#revGrad)" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', flexDirection: 'column', gap: 6 }}>
-              <TrendingUp size={28} color="var(--border-strong)" />
-              Revenue chart data is not yet available
-            </div>
-          )}
-        </Card>
 
-        {/* Order status breakdown */}
-        <Card>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', marginBottom: 18 }}>Order Status</div>
-          {stats?.ordersByStatus ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {Object.entries(stats.ordersByStatus).map(([status, count]) => {
-                const total = Object.values(stats.ordersByStatus).reduce((a, b) => a + b, 0);
-                const pct = total ? Math.round((count / total) * 100) : 0;
-                return (
-                  <div key={status}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_COLORS[status] || 'var(--text-muted)', flexShrink: 0 }} />
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{status.replace(/_/g, ' ')}</span>
-                      </div>
-                      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.9rem' }}>{count}</span>
-                    </div>
-                    <div style={{ height: 5, background: 'var(--bg-overlay)', borderRadius: 99, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: STATUS_COLORS[status] || 'var(--text-muted)', borderRadius: 99, transition: 'width 0.6s ease' }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '32px 0', lineHeight: 1.6 }}>
-              <ShoppingCart size={24} color="var(--border-strong)" style={{ marginBottom: 8 }} />
-              <div>No breakdown data yet</div>
-              <div style={{ fontSize: '0.78rem', marginTop: 4 }}>Order stats appear here once orders are placed</div>
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* Pending orders */}
-      {pendingOrders.length > 0 && (
-        <Card>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18, flexWrap: 'wrap', gap: 10 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--blue)', boxShadow: '0 0 6px var(--blue)' }} />
-                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem' }}>{cfg.transactions.ordersNavLabel || 'Orders'} Awaiting Review</div>
+          {/* Quick actions + recent */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
+            <Card>
+              <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.95rem', marginBottom: 16, color: 'var(--text-primary)' }}>Quick Actions</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {!hasBookings && <QuickAction icon={ShoppingCart} label="View Orders" to="/orders" />}
+                {hasBookings && <QuickAction icon={Calendar} label="View Bookings" to="/bookings" />}
+                <QuickAction icon={MessageSquare} label="Live Sessions" to="/sessions" color="amber" />
+                <QuickAction icon={Users} label="Customers" to="/customers" color="blue" />
               </div>
-              <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Pending {(cfg.transactions.ordersNavLabel || 'orders').toLowerCase()} need approval or rejection</div>
-            </div>
-            {/* FIX: was /orders?filter=proof_received — 'proof_received' is a paymentStatus, not an order status.
-                 Backend status filter only supports: pending | confirmed | completed | cancelled | payment_failed | rejected.
-                 Link to /orders?filter=pending which correctly surfaces pending orders. */}
-            <Button size="sm" variant="secondary" onClick={() => navigate('/orders?filter=pending')}>View All</Button>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {pendingOrders.map(order => (
-              <div key={order._id} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: 'var(--bg-elevated)', border: '1.5px solid var(--border)',
-                borderRadius: 'var(--radius-md)', padding: '13px 16px',
-                flexWrap: 'wrap', gap: 8,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-sm)', background: 'var(--blue-dim)', border: '1.5px solid rgba(59,130,246,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <ShoppingCart size={15} color="var(--blue)" />
-                  </div>
-                  <div>
-                    <span style={{ fontWeight: 700, fontSize: '0.9rem', fontFamily: 'var(--font-display)' }}>#{order.shortId}</span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginLeft: 10 }}>
-                      {order.item}{order.quantity ? ` × ${order.quantity}` : ''}
-                    </span>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{order.customerPhone}</span>
-                  <Button size="sm" variant="success" onClick={() => navigate('/orders?filter=pending')}>Review</Button>
-                </div>
+            </Card>
+
+            <Card>
+              <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.95rem', marginBottom: 16, color: 'var(--text-primary)' }}>Setup Status</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {[
+                  { label: 'Business Info', done: !!user?.name, to: '/setup/business' },
+                  { label: 'WhatsApp Connected', done: whatsappActive, to: '/setup/whatsapp' },
+                  { label: 'Opening Hours', done: false, to: '/setup/hours' },
+                  { label: 'Bot Messages', done: false, to: '/setup/bot' },
+                ].map(item => (
+                  <button
+                    key={item.label}
+                    onClick={() => navigate(item.to)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', textAlign: 'left' }}
+                  >
+                    <div style={{
+                      width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                      background: item.done ? 'var(--primary)' : 'var(--bg-overlay)',
+                      border: `2px solid ${item.done ? 'var(--primary)' : 'var(--border-mid)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {item.done && <span style={{ color: '#fff', fontSize: '0.65rem', fontWeight: 700 }}>✓</span>}
+                    </div>
+                    <span style={{ fontSize: '0.875rem', color: item.done ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: item.done ? 600 : 400 }}>{item.label}</span>
+                  </button>
+                ))}
               </div>
-            ))}
+            </Card>
           </div>
-        </Card>
+        </>
       )}
     </div>
   );

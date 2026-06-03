@@ -1,196 +1,98 @@
-import { useEffect, useState } from 'react';
-import { CalendarCheck } from 'lucide-react';
-import { bookings as bookingsApi } from '../services/api';
-import {
-  PageHeader, Card, Table, Tr, Td, BookingStatusBadge, Button,
-  EmptyState, Spinner, Modal, DetailRow, FilterTabs, SearchInput
-} from '../components/ui/index.jsx';
+// BookingsPage.jsx
+import { useEffect, useState, useCallback } from 'react';
+import { Calendar, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { dashApi } from '../api.js';
+import { PageHeader, Card, StatusBadge, Btn, EmptyState, Spinner, Select } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
-import { useAuth } from '../store/AuthContext';
-import { getBizConfig } from '../utils/businessConfig';
-import { format } from 'date-fns';
 
-const FILTERS = [
-  { label: 'All',       value: '' },
-  { label: 'Pending',   value: 'pending' },
-  { label: 'Confirmed', value: 'confirmed' },
-  { label: 'Completed', value: 'completed' },
-  { label: 'Declined',  value: 'cancelled' },
-];
+const STATUS_OPTIONS = ['pending','confirmed','completed','cancelled'];
 
-export default function BookingsPage() {
-  const { tenant } = useAuth();
-  const cfg = getBizConfig(tenant?.businessMode || 'GENERIC');
-  const [filter, setFilter]     = useState('');
-  const [search, setSearch]     = useState('');
-  const [rawData, setRawData]   = useState([]);
-  const [loading, setLoading]   = useState(true);
-  // Client-side search — backend getBookings has no search param
-  const data = search.trim()
-    ? rawData.filter(b => {
-        const q = search.toLowerCase();
-        return (
-          (b.customerPhone || '').includes(q) ||
-          (b.shortId || '').toLowerCase().includes(q) ||
-          (b.service || '').toLowerCase().includes(q) ||
-          (b.customerName || '').toLowerCase().includes(q)
-        );
-      })
-    : rawData;
-  const [selected, setSelected] = useState(null);
-  const [declineReason, setDeclineReason] = useState('');
-  const [acting, setActing]     = useState({});  // { [bookingId]: 'confirm'|'decline' }
-  const [showDecline, setShowDecline] = useState(false);
-  const [page, setPage]         = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const LIMIT = 50;
+function BookingRow({ booking, onUpdate }) {
+  const [expanded, setExpanded] = useState(false);
+  const [newStatus, setNewStatus] = useState(booking.status);
+  const [adminNote, setAdminNote] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const load = async (pg = page) => {
-    setLoading(true);
+  const handleUpdate = async () => {
+    setSaving(true);
     try {
-      const params = { limit: LIMIT, page: pg };
-      if (filter) params.status = filter;
-      const res = await bookingsApi.list(params);
-      setRawData(res.data?.bookings || []);
-      if (res.data?.pages) setTotalPages(res.data.pages);
-    } catch { toast.error('Failed to load bookings'); }
-    finally { setLoading(false); }
-  };
-
-  useEffect(() => { load(1); setPage(1); }, [filter]); // search is client-side
-  useEffect(() => { if (page > 1) load(page); }, [page]);
-
-  const confirm = async (bookingId) => {
-    setActing(a => ({ ...a, [bookingId]: 'confirm' }));
-    try {
-      await bookingsApi.confirm(bookingId);
-      toast.success('Booking confirmed — customer notified ✅');
-      setSelected(null);
-      load();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed to confirm'); }
-    finally { setActing(a => ({ ...a, [bookingId]: null })); }
-  };
-
-  const decline = async (bookingId) => {
-    setActing(a => ({ ...a, [bookingId]: 'decline' }));
-    try {
-      // mirrors adminCommandService declineBooking(shortId, reason, ...)
-      await bookingsApi.decline(bookingId, declineReason || undefined);
-      toast.success('Booking declined — customer notified');
-      setSelected(null);
-      setShowDecline(false);
-      setDeclineReason('');
-      load();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed to decline'); }
-    finally { setActing(a => ({ ...a, [bookingId]: null })); }
+      await dashApi.updateBooking(booking._id, { status: newStatus, adminNote: adminNote || undefined });
+      onUpdate({ ...booking, status: newStatus });
+      toast.success('Booking updated');
+      setExpanded(false);
+    } catch (err) { toast.error(err.message); }
+    finally { setSaving(false); }
   };
 
   return (
-    <div className="fade-in">
-      <PageHeader title={cfg.transactions.bookingsPageTitle || "Bookings"} subtitle={cfg.transactions.bookingsSubtitle || "Manage customer bookings"} />
-
-      <Card style={{ marginBottom: 20, padding: '14px 18px' }}>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <FilterTabs filters={FILTERS} active={filter} onChange={setFilter} />
-          <SearchInput value={search} onChange={setSearch} placeholder="Search by phone, ref, service…" />
-        </div>
-        {search.trim() && (
-          <div style={{ marginTop: 10, fontSize: '0.78rem', color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>⚠</span> Searching within the {rawData.length} most recently loaded bookings. Older records are not included.
+    <div style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-lg)', marginBottom: 8, overflow: 'hidden' }}>
+      <div onClick={() => setExpanded(v => !v)} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', cursor: 'pointer' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: 2 }}>{booking.service || 'Appointment'}</div>
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            {booking.customerPhone} · {booking.date} {booking.time ? `at ${booking.time}` : ''}
           </div>
-        )}
-      </Card>
-
-      <Card padding="0">
-        {loading ? <Spinner /> : data.length === 0 ? (
-          <EmptyState icon={CalendarCheck} title={`No ${(cfg.transactions.bookingsNavLabel || "bookings").toLowerCase()} yet`} body={cfg.transactions.emptyBookingsBody || "Booking requests from WhatsApp will appear here"} />
-        ) : (
-          <Table headers={['Ref', 'Customer', 'Service', 'Date', 'Time', 'Party', 'Status', 'Actions']}>
-            {data.map(b => (
-              <Tr key={b._id} onClick={() => setSelected(b)}>
-                <Td><span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--primary)' }}>#{b.shortId}</span></Td>
-                <Td style={{ color: 'var(--text-secondary)', fontSize: '0.83rem' }}>{b.customerPhone}</Td>
-                <Td style={{ fontWeight: 500 }}>{b.service || '—'}</Td>
-                <Td>{b.date || '—'}</Td>
-                <Td>{b.time || '—'}</Td>
-                <Td>{b.partySize || '—'}</Td>
-                <Td><BookingStatusBadge status={b.status} /></Td>
-                <Td onClick={e => e.stopPropagation()}>
-                  {b.status === 'pending' && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <Button size="sm" variant="success" loading={acting[b._id] === 'confirm'} onClick={() => confirm(b._id)}>✓ Confirm</Button>
-                      <Button size="sm" variant="danger" loading={acting[b._id] === 'decline'} onClick={() => { setSelected(b); setShowDecline(true); }}>✗ Decline</Button>
-                    </div>
-                  )}
-                </Td>
-              </Tr>
-            ))}
-          </Table>
-        )}
-      </Card>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 20 }}>
-          <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>← Previous</Button>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Page {page} of {totalPages}</span>
-          <Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next →</Button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <StatusBadge status={booking.status} />
+          {expanded ? <ChevronUp size={14} color="var(--text-muted)" /> : <ChevronDown size={14} color="var(--text-muted)" />}
+        </div>
+      </div>
+      {expanded && (
+        <div style={{ borderTop: '1px solid var(--border)', padding: '16px 18px', background: 'var(--bg-base)' }}>
+          {booking.adminNote && <div style={{ marginBottom: 12, fontSize: '0.82rem', color: 'var(--text-secondary)' }}><span style={{ fontWeight: 600 }}>Note: </span>{booking.adminNote}</div>}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 160 }}>
+              <Select label="Update status" value={newStatus} onChange={e => setNewStatus(e.target.value)}>
+                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+              </Select>
+            </div>
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>Note (optional)</label>
+              <input value={adminNote} onChange={e => setAdminNote(e.target.value)} placeholder="Note to customer..." style={{ width: '100%', padding: '10px 13px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-body)', fontSize: '0.875rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none' }} />
+            </div>
+            <Btn onClick={handleUpdate} loading={saving} size="sm">Save</Btn>
+          </div>
         </div>
       )}
-
-      {/* Booking detail modal */}
-      <Modal open={!!selected && !showDecline} onClose={() => setSelected(null)} title={`Booking #${selected?.shortId}`} width={460}>
-        {selected && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <DetailRow label="Customer" value={selected.customerPhone} />
-            <DetailRow label="Name" value={selected.customerName || '—'} />
-            <DetailRow label="Service" value={selected.service || '—'} />
-            <DetailRow label="Date" value={selected.date || '—'} />
-            <DetailRow label="Time" value={selected.time || '—'} />
-            <DetailRow label="Party size" value={selected.partySize || '—'} />
-            <DetailRow label="Status" value={<BookingStatusBadge status={selected.status} />} />
-            {selected.adminNote && <DetailRow label="Decline reason" value={selected.adminNote} />}
-            {selected.status === 'pending' && (
-              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-                <Button variant="success" style={{ flex: 1 }} loading={acting[selected._id] === 'confirm'} onClick={() => confirm(selected._id)}>
-                  ✓ Confirm Booking
-                </Button>
-                <Button variant="danger" style={{ flex: 1 }} loading={acting[selected._id] === 'decline'} onClick={() => setShowDecline(true)}>
-                  ✗ Decline
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-      </Modal>
-
-      {/* Decline modal with reason — mirrors DECLINE BOOK <id> [reason] */}
-      <Modal open={showDecline} onClose={() => { setShowDecline(false); setDeclineReason(''); }} title="Decline Booking" width={400}>
-        {selected && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-              Declining booking <strong>#{selected.shortId}</strong> will notify the customer and cancel their appointment.
-            </p>
-            <div>
-              <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-                Reason <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span>
-              </label>
-              <input
-                placeholder="e.g. Fully booked that day"
-                value={declineReason}
-                onChange={e => setDeclineReason(e.target.value)}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <Button variant="secondary" style={{ flex: 1 }} onClick={() => { setShowDecline(false); setDeclineReason(''); }}>Cancel</Button>
-              <Button variant="danger" style={{ flex: 1 }} loading={acting[selected?._id] === 'decline'} onClick={() => decline(selected._id)}>
-                Decline Booking
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
     </div>
   );
 }
 
+export function BookingsPage() {
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('');
+
+  const fetch = useCallback(() => {
+    setLoading(true);
+    dashApi.bookings({ status: statusFilter || undefined })
+      .then(r => setBookings(r.data.bookings || []))
+      .catch(err => toast.error(err.message))
+      .finally(() => setLoading(false));
+  }, [statusFilter]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+
+  return (
+    <div className="fade-in">
+      <PageHeader icon={Calendar} title="Bookings" subtitle={`${bookings.length} bookings`}
+        actions={
+          <div style={{ display: 'flex', gap: 8 }}>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+              style={{ padding: '8px 12px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-body)', fontSize: '0.8rem', background: 'var(--bg-surface)', cursor: 'pointer' }}>
+              <option value="">All</option>
+              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <Btn variant="ghost" size="sm" onClick={fetch}><RefreshCw size={14} /></Btn>
+          </div>
+        }
+      />
+      {loading ? <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}><Spinner size={28} /></div>
+        : bookings.length === 0 ? <Card><EmptyState icon={Calendar} title="No bookings yet" description="Bookings will appear here when customers schedule appointments via WhatsApp." /></Card>
+        : bookings.map(b => <BookingRow key={b._id} booking={b} onUpdate={u => setBookings(bs => bs.map(x => x._id === u._id ? u : x))} />)}
+    </div>
+  );
+}
+
+export default BookingsPage;

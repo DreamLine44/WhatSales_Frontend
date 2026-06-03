@@ -1,175 +1,110 @@
-import { useEffect, useState } from 'react';
-import { MessageSquare, UserCheck, RefreshCw, Bot, UserX } from 'lucide-react';
-import { sessions as sessionsApi } from '../services/api';
-import {
-  PageHeader, Card, Table, Tr, Td, Button, EmptyState, Spinner, Badge, StatCard, Grid, FilterTabs
-} from '../components/ui/index.jsx';
+import { useEffect, useState, useCallback } from 'react';
+import { MessageSquare, RefreshCw, Bot, User } from 'lucide-react';
+import { dashApi } from '../api.js';
+import { PageHeader, Card, Btn, EmptyState, Spinner, Badge } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
-import { formatDistanceToNow } from 'date-fns';
+
+function SessionCard({ session, onToggle }) {
+  const [toggling, setToggling] = useState(false);
+  const isHuman = session.humanMode;
+
+  const toggle = async () => {
+    setToggling(true);
+    try {
+      await dashApi.setHumanMode(session.customerPhone, !isHuman);
+      onToggle(session.customerPhone, !isHuman);
+      toast.success(isHuman ? 'Bot resumed' : 'Human mode enabled');
+    } catch (err) { toast.error(err.message); }
+    finally { setToggling(false); }
+  };
+
+  const lastSeen = session.lastSeen ? new Date(session.lastSeen) : null;
+  const timeAgo = lastSeen ? Math.floor((Date.now() - lastSeen) / 60000) : null;
+
+  return (
+    <div style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div style={{ width: 42, height: 42, borderRadius: '50%', background: isHuman ? 'var(--amber-dim)' : 'var(--primary-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {isHuman ? <User size={20} color="var(--amber)" /> : <Bot size={20} color="var(--primary)" />}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: 3 }}>{session.customerName || 'Customer'}</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 3 }}>{session.customerPhone}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {session.currentFlow && <Badge color="blue">{session.currentFlow}</Badge>}
+          {timeAgo !== null && <span style={{ fontSize: '0.72rem', color: 'var(--text-ghost)' }}>Active {timeAgo}m ago</span>}
+          {session.messageCount != null && <span style={{ fontSize: '0.72rem', color: 'var(--text-ghost)' }}>{session.messageCount} msgs</span>}
+        </div>
+      </div>
+      <div style={{ flexShrink: 0 }}>
+        <Btn
+          variant={isHuman ? 'amber' : 'ghost'}
+          size="sm"
+          onClick={toggle}
+          loading={toggling}
+          style={{ minWidth: 110 }}
+        >
+          {isHuman ? <><User size={13} /> Human Mode</> : <><Bot size={13} /> Bot Active</>}
+        </Btn>
+      </div>
+    </div>
+  );
+}
 
 export default function SessionsPage() {
-  const [allSessions, setAllSessions] = useState([]);
-  const [loading, setLoading]         = useState(true);
-  const [acting, setActing]           = useState({});
-  const [filter, setFilter]           = useState('');
-  const [count, setCount]             = useState({ total: 0, humanMode: null });
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [humanOnly, setHumanOnly] = useState(false);
 
-  // Client-side filter — no extra API call on tab switch
-  const data = filter === 'human'
-    ? allSessions.filter(s => s.humanMode)
-    : allSessions;
-
-  const load = async () => {
+  const fetch = useCallback(() => {
     setLoading(true);
-    try {
-      const allRes = await sessionsApi.list({ limit: 200 });
-      const all = allRes.data?.conversations || [];
-      const humanCount = all.filter(s => s.humanMode).length;
-      setAllSessions(all);
-      setCount({ total: all.length, humanMode: humanCount });
-    } catch { toast.error('Failed to load sessions'); }
-    finally { setLoading(false); }
-  };
-
-  // Fetch on mount, then poll every 30s for new sessions without requiring manual refresh
-  useEffect(() => {
-    load();
-    const interval = setInterval(() => { load(); }, 30000);
-    return () => clearInterval(interval);
+    dashApi.conversations(100)
+      .then(r => setSessions(r.data.conversations || []))
+      .catch(err => toast.error(err.message))
+      .finally(() => setLoading(false));
   }, []);
 
-  // Mirrors adminCommandService resumeBot — same as "RESUME BOT <phone>"
-  // Backend also sends the customer a WhatsApp notification
-  const resumeBot = async (customerPhone) => {
-    setActing(a => ({ ...a, [customerPhone]: 'resume' }));
-    try {
-      await sessionsApi.resumeBot(customerPhone);
-      toast.success(`✅ Bot resumed for ${customerPhone}`);
-      load();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to resume bot');
-    } finally {
-      setActing(a => ({ ...a, [customerPhone]: null }));
-    }
-  };
+  useEffect(() => { fetch(); }, [fetch]);
 
-  // FIX: takeOver was defined in api.js but never wired to the UI.
-  // Adds a "Take Over" button for bot-active sessions so agents can intercept.
-  const takeOver = async (customerPhone) => {
-    setActing(a => ({ ...a, [customerPhone]: 'takeover' }));
-    try {
-      await sessionsApi.takeOver(customerPhone);
-      toast.success(`Human mode enabled for ${customerPhone} — bot silenced`);
-      load();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to enable human mode');
-    } finally {
-      setActing(a => ({ ...a, [customerPhone]: null }));
-    }
-  };
+  const displayed = humanOnly ? sessions.filter(s => s.humanMode) : sessions;
+  const humanCount = sessions.filter(s => s.humanMode).length;
 
-  const FILTERS = [
-    { label: 'All Active', value: '' },
-    { label: `Human Mode (${count.humanMode ?? '–'})`, value: 'human' },
-  ];
+  const handleToggle = (phone, humanMode) => {
+    setSessions(ss => ss.map(s => s.customerPhone === phone ? { ...s, humanMode } : s));
+  };
 
   return (
     <div className="fade-in">
       <PageHeader
+        icon={MessageSquare}
         title="Live Sessions"
-        subtitle="Active customer conversations — manage human handoff"
-        action={
-          <Button variant="secondary" onClick={load} size="sm">
-            <RefreshCw size={14} /> Refresh
-          </Button>
+        subtitle={`${sessions.length} total · ${humanCount} in human mode`}
+        actions={
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn variant={humanOnly ? 'soft' : 'ghost'} size="sm" onClick={() => setHumanOnly(v => !v)}>
+              <User size={13} /> Human only
+            </Btn>
+            <Btn variant="ghost" size="sm" onClick={fetch}><RefreshCw size={14} /></Btn>
+          </div>
         }
       />
 
-      {/* Stats */}
-      <Grid cols={3} minColWidth={160} gap={14} style={{ marginBottom: 24 }}>
-        <StatCard label="Active Sessions" value={count.total}                          icon={MessageSquare} color="var(--blue)"    />
-        <StatCard label="Human Mode"      value={count.humanMode} sub="Bot silenced"   icon={UserCheck}     color="var(--primary)" />
-        <StatCard label="Bot Active"      value={count.humanMode !== null ? count.total - count.humanMode : '—'} sub="Automated" icon={Bot} color="var(--green)"   />
-      </Grid>
-
-      {/* Human mode banner */}
-      {count.humanMode > 0 && (
-        <Card style={{ marginBottom: 20, background: 'var(--primary-dim)', border: '1px solid var(--border-accent)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <UserCheck size={18} color="var(--primary)" />
-            <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-              <strong>{count.humanMode}</strong> customer{count.humanMode > 1 ? 's are' : ' is'} in human-mode.
-              The bot is silenced — reply directly on WhatsApp, then click <em>Resume Bot</em>.
-            </span>
-          </div>
-        </Card>
+      {humanCount > 0 && (
+        <div style={{ marginBottom: 16, padding: '10px 14px', background: 'var(--amber-dim)', border: '1.5px solid rgba(217,119,6,0.2)', borderRadius: 'var(--radius-md)', fontSize: '0.83rem', color: 'var(--amber)', fontWeight: 600 }}>
+          ⚠️ {humanCount} customer{humanCount !== 1 ? 's' : ''} waiting for a human response
+        </div>
       )}
 
-      {/* Filter tabs */}
-      <div style={{ marginBottom: 16 }}>
-        <FilterTabs filters={FILTERS} active={filter} onChange={setFilter} />
-      </div>
-
-      <Card padding="0">
-        {loading ? <Spinner /> : data.length === 0 ? (
-          <EmptyState icon={MessageSquare} title="No active sessions" body="Customer sessions appear here while they're chatting with your bot" />
-        ) : (
-          <Table headers={['Customer', 'Flow / Step', 'Last Seen', 'Messages', 'Mode', 'Actions']}>
-            {data.map(s => (
-              <Tr key={s._id || s.customerPhone}>
-                <Td>
-                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{s.customerPhone}</div>
-                  {s.customerName && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{s.customerName}</div>}
-                </Td>
-                <Td>
-                  {s.currentFlow ? (
-                    <div>
-                      <Badge label={s.currentFlow} color="blue" />
-                      {s.step && <span style={{ fontSize: '0.77rem', color: 'var(--text-muted)', marginLeft: 6 }}>{s.step}</span>}
-                    </div>
-                  ) : (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.87rem' }}>Idle</span>
-                  )}
-                </Td>
-                <Td style={{ color: 'var(--text-muted)', fontSize: '0.83rem' }}>
-                  {s.lastSeen ? formatDistanceToNow(new Date(s.lastSeen), { addSuffix: true }) : '—'}
-                </Td>
-                <Td style={{ fontWeight: 600 }}>{s.messageCount || 0}</Td>
-                <Td>
-                  {s.humanMode ? (
-                    <Badge label="Human Mode" color="amber" />
-                  ) : (
-                    <Badge label="Bot Active"  color="green" />
-                  )}
-                </Td>
-                <Td>
-                  {s.humanMode ? (
-                    // Resume bot — sends customer a WhatsApp notification
-                    <Button
-                      size="sm"
-                      loading={acting[s.customerPhone] === 'resume'}
-                      onClick={() => resumeBot(s.customerPhone)}
-                    >
-                      <Bot size={13} /> Resume Bot
-                    </Button>
-                  ) : (
-                    // FIX: "Take Over" button was missing — api.js had sessions.takeOver()
-                    // but it was never surfaced in the UI. Now wired up.
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      loading={acting[s.customerPhone] === 'takeover'}
-                      onClick={() => takeOver(s.customerPhone)}
-                    >
-                      <UserX size={13} /> Take Over
-                    </Button>
-                  )}
-                </Td>
-              </Tr>
-            ))}
-          </Table>
-        )}
-      </Card>
+      {loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}><Spinner size={28} /></div>
+      ) : displayed.length === 0 ? (
+        <Card>
+          <EmptyState icon={MessageSquare} title={humanOnly ? 'No sessions in human mode' : 'No active sessions'} description="Live customer sessions will appear here. Toggle a session to human mode to take over from the bot." />
+        </Card>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {displayed.map(s => <SessionCard key={s.customerPhone} session={s} onToggle={handleToggle} />)}
+        </div>
+      )}
     </div>
   );
 }

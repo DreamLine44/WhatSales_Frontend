@@ -1,160 +1,114 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AdminProvider, useAdmin } from './store/AdminContext';
-import AdminDashboardPage from './pages/AdminDashboardPage';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { AuthProvider, useAuth } from './store/AuthContext';
-import { getNavVisibility } from './utils/businessConfig';
-import DashboardLayout from './components/layout/DashboardLayout';
+import { AuthProvider, useAuth } from './store/AuthContext.jsx';
+import { AdminProvider, useAdmin } from './store/AdminContext.jsx';
+import { Spinner } from './components/ui.jsx';
 
-import LoginPage        from './pages/LoginPage';
-import NotFoundPage     from './pages/NotFoundPage';
-import DashboardPage    from './pages/DashboardPage';
-import OrdersPage       from './pages/OrdersPage';
-import BookingsPage     from './pages/BookingsPage';
-import MenuPage         from './pages/MenuPage';
-import ServicesPage     from './pages/ServicesPage';
-import SessionsPage     from './pages/SessionsPage';
-import BusinessSetupPage from './pages/BusinessSetupPage';
-import BotConfigPage    from './pages/BotConfigPage';
-import HoursPage        from './pages/HoursPage';
-import WhatsAppPage     from './pages/WhatsAppPage';
-import AnalyticsPage    from './pages/AnalyticsPage';
-import CustomersPage    from './pages/CustomersPage';
-import FAQPage          from './pages/FAQPage';
-import SetupWizardPage  from './pages/SetupWizardPage';
-import WhatsAppConnectionPage from './pages/WhatsAppConnectionPage';
-import AdminOnboardingDashboard from './pages/AdminOnboardingDashboard';
+// Layouts
+import DashboardLayout from './components/DashboardLayout.jsx';
+import AdminLayout from './components/AdminLayout.jsx';
 
-function ProtectedRoute({ children }) {
+// Public
+import LoginPage from './pages/LoginPage.jsx';
+
+// Tenant pages
+import DashboardPage from './pages/DashboardPage.jsx';
+import OrdersPage from './pages/OrdersPage.jsx';
+import BookingsPage from './pages/BookingsPage.jsx';
+import SessionsPage from './pages/SessionsPage.jsx';
+import AnalyticsPage from './pages/AnalyticsPage.jsx';
+import CustomersPage from './pages/CustomersPage.jsx';
+import AutoRepliesPage from './pages/AutoRepliesPage.jsx';
+import BusinessInfoPage from './pages/BusinessInfoPage.jsx';
+import MenuPage from './pages/MenuPage.jsx';
+import ServicesPage from './pages/ServicesPage.jsx';
+import OpeningHoursPage from './pages/OpeningHoursPage.jsx';
+import BotMessagesPage from './pages/BotMessagesPage.jsx';
+import WhatsAppPage from './pages/WhatsAppPage.jsx';
+
+// Admin pages
+import AdminDashboardPage from './pages/admin/AdminDashboardPage.jsx';
+import AdminTenantsPage from './pages/admin/AdminTenantsPage.jsx';
+
+// ── Route guards ──────────────────────────────────────────────────────────────
+function RequireAuth({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <SplashScreen />;
-  if (!user) return <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><Spinner size={36} /></div>;
+  if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
   return children;
 }
 
-/** Redirects /menu → /services for service-based modes, and vice versa. Wraps the real page. */
-function CatalogRoute({ page, children }) {
-  const { tenant } = useAuth();
-  const vis = getNavVisibility(tenant?.businessMode || 'GENERIC');
-  if (page === 'menu'     && !vis.showMenu)    return <Navigate to="/services" replace />;
-  if (page === 'services' && !vis.showServices) return <Navigate to="/menu"     replace />;
-  return children;
-}
-
-function ProtectedAdminRoute({ children }) {
-  const { isAdmin, loading } = useAdmin();
-  if (loading) return <SplashScreen />;
+function RequireAdmin({ children }) {
+  const { isAdmin } = useAdmin();
   if (!isAdmin) return <Navigate to="/login" replace />;
   return children;
 }
 
-function SplashScreen() {
-  return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'var(--bg-base)',
-    }}>
-      <div style={{ textAlign: 'center', animation: 'fadeIn 0.3s ease' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16 }}>
-          <WhatsalesLogo size={44} />
-          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.4rem', color: 'var(--text-primary)', letterSpacing: '-0.03em' }}>WhatSales</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-          <div style={{ width: 14, height: 14 }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ animation: 'spin 0.8s linear infinite' }}>
-              <path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round"/>
-            </svg>
-          </div>
-          Loading your dashboard…
-        </div>
-      </div>
-    </div>
-  );
+function RedirectIfLoggedIn({ children }) {
+  const { user, loading } = useAuth();
+  const { isAdmin } = useAdmin();
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><Spinner size={36} /></div>;
+  if (isAdmin) return <Navigate to="/admin" replace />;
+  if (user) return <Navigate to="/dashboard" replace />;
+  return children;
 }
 
-export function WhatsalesLogo({ size = 32, light = false }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
-      <rect width="40" height="40" rx="11"
-        fill={light ? 'rgba(159,224,180,0.12)' : 'var(--primary)'}
-        stroke={light ? 'rgba(159,224,180,0.24)' : 'none'}
-        strokeWidth="1.5"
-      />
-      <path
-        d="M20 8C13.373 8 8 13.373 8 20c0 2.144.566 4.155 1.556 5.894L8 32l6.293-1.513A11.94 11.94 0 0020 32c6.627 0 12-5.373 12-12S26.627 8 20 8z"
-        fill={light ? 'var(--mint)' : '#ffffff'}
-        fillOpacity={light ? 0.9 : 0.96}
-      />
-      <path d="M15 18h10M15 22h7"
-        stroke={light ? 'var(--deep-green)' : 'var(--primary)'}
-        strokeWidth="2.2" strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
+// ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   return (
-    <AdminProvider>
+    <BrowserRouter>
       <AuthProvider>
-        <BrowserRouter>
+        <AdminProvider>
           <Toaster
             position="top-right"
             toastOptions={{
+              duration: 3500,
               style: {
-                background: 'var(--bg-surface)',
-                color: 'var(--text-primary)',
-                border: '1.5px solid var(--border-strong)',
                 fontFamily: 'var(--font-body)',
                 fontSize: '0.875rem',
+                borderRadius: '10px',
+                border: '1.5px solid var(--border)',
                 boxShadow: 'var(--shadow-md)',
-                borderRadius: 'var(--radius-md)',
               },
-              success: { iconTheme: { primary: 'var(--green)', secondary: '#fff' } },
-              error:   { iconTheme: { primary: 'var(--red)',   secondary: '#fff' } },
+              success: { iconTheme: { primary: 'var(--primary)', secondary: '#fff' } },
+              error:   { iconTheme: { primary: 'var(--red)', secondary: '#fff' } },
             }}
           />
+
           <Routes>
-            <Route path="/login"    element={<LoginPage />} />
-            <Route path="/" element={
-              <ProtectedRoute>
-                <DashboardLayout />
-              </ProtectedRoute>
-            }>
-              <Route index           element={<Navigate to="/dashboard" replace />} />
-              <Route path="dashboard"  element={<DashboardPage />} />
-              <Route path="orders"     element={<OrdersPage />} />
-              <Route path="bookings"   element={<BookingsPage />} />
-              <Route path="menu"       element={<CatalogRoute page="menu"><MenuPage /></CatalogRoute>} />
-              <Route path="services"   element={<CatalogRoute page="services"><ServicesPage /></CatalogRoute>} />
-              <Route path="sessions"   element={<SessionsPage />} />
-              <Route path="analytics"  element={<AnalyticsPage />} />
-              <Route path="customers"  element={<CustomersPage />} />
-              <Route path="faqs"       element={<FAQPage />} />
-              <Route path="setup/business"  element={<BusinessSetupPage />} />
-              <Route path="setup/bot"       element={<BotConfigPage />} />
-              <Route path="setup/hours"     element={<HoursPage />} />
-              <Route path="setup/whatsapp"  element={<WhatsAppPage />} />
-              <Route path="setup/wizard"    element={<SetupWizardPage />} />
-              <Route path="setup/whatsapp-connect" element={<WhatsAppConnectionPage />} />
+            {/* Public */}
+            <Route path="/login" element={<RedirectIfLoggedIn><LoginPage /></RedirectIfLoggedIn>} />
+            <Route path="/" element={<Navigate to="/login" replace />} />
+
+            {/* Tenant dashboard */}
+            <Route element={<RequireAuth><DashboardLayout /></RequireAuth>}>
+              <Route path="/dashboard"      element={<DashboardPage />} />
+              <Route path="/orders"         element={<OrdersPage />} />
+              <Route path="/bookings"       element={<BookingsPage />} />
+              <Route path="/sessions"       element={<SessionsPage />} />
+              <Route path="/analytics"      element={<AnalyticsPage />} />
+              <Route path="/customers"      element={<CustomersPage />} />
+              <Route path="/auto-replies"   element={<AutoRepliesPage />} />
+              <Route path="/setup/business" element={<BusinessInfoPage />} />
+              <Route path="/setup/menu"     element={<MenuPage />} />
+              <Route path="/setup/services" element={<ServicesPage />} />
+              <Route path="/setup/hours"    element={<OpeningHoursPage />} />
+              <Route path="/setup/bot"      element={<BotMessagesPage />} />
+              <Route path="/setup/whatsapp" element={<WhatsAppPage />} />
             </Route>
-            <Route path="admin" element={
-              <ProtectedAdminRoute>
-                <AdminDashboardPage />
-              </ProtectedAdminRoute>
-            } />
-            <Route path="admin/onboarding" element={
-              <ProtectedAdminRoute>
-                <AdminOnboardingDashboard />
-              </ProtectedAdminRoute>
-            } />
-            <Route path="*" element={<NotFoundPage />} />
+
+            {/* Super admin */}
+            <Route element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
+              <Route path="/admin"         element={<AdminDashboardPage />} />
+              <Route path="/admin/tenants" element={<AdminTenantsPage />} />
+            </Route>
+
+            {/* Catch-all */}
+            <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
-        </BrowserRouter>
+        </AdminProvider>
       </AuthProvider>
-    </AdminProvider>
+    </BrowserRouter>
   );
 }
