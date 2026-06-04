@@ -69,7 +69,7 @@ export default function App() {
                 fontSize: '0.875rem',
                 borderRadius: '10px',
                 border: '1.5px solid var(--border)',
-                boxShadow: 'var(--shadow-md)',
+                boxShadow: 'var(--sh-md)',
               },
               success: { iconTheme: { primary: 'var(--primary)', secondary: '#fff' } },
               error:   { iconTheme: { primary: 'var(--red)', secondary: '#fff' } },

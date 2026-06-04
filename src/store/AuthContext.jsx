@@ -3,10 +3,31 @@ import { authApi } from '../api.js';
 
 const AuthContext = createContext(null);
 
+// [FIX-AUTH-1] /business/:tenantId returns { business, tenant }.
+// Previously code tried data.tenant?.whatsapp which was always undefined because
+// the old /dashboard/:id/overview endpoint doesn't return tenant.whatsapp at all.
+// Now both login and restore use /business/:id which always returns the full tenant doc.
+
+function buildUserFromResponse(tenantId, data) {
+  const biz    = data.business || {};
+  const tenant = data.tenant   || {};
+  return {
+    tenantId,
+    name:         biz.name         || 'My Business',
+    businessMode: biz.businessMode || 'RESTAURANT',
+    adminPhone:   biz.adminPhone   || '',
+    // [FIX-AUTH-2] whatsapp comes from the tenant doc, not the business config.
+    // It was always {} because /overview doesn't include tenant.whatsapp.
+    whatsapp:     tenant.whatsapp  || {},
+    plan:         tenant.plan      || 'FREE',
+    status:       tenant.status    || 'ACTIVE',
+  };
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);      // { tenantId, name, businessMode, whatsapp, ... }
+  const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError]     = useState(null);
 
   // On mount, try to restore session from localStorage
   useEffect(() => {
@@ -22,16 +43,7 @@ export function AuthProvider({ children }) {
   const restore = async (tenantId, apiKey) => {
     try {
       const data = await authApi.getTenantInfo(tenantId, apiKey);
-      const biz = data.business || {};
-      setUser({
-        tenantId,
-        name: biz.name || 'My Business',
-        businessMode: biz.businessMode || 'RESTAURANT',
-        adminPhone: biz.adminPhone || '',
-        whatsapp: data.tenant?.whatsapp || {},
-        plan: data.tenant?.plan || 'FREE',
-        status: data.tenant?.status || 'ACTIVE',
-      });
+      setUser(buildUserFromResponse(tenantId, data));
     } catch {
       // Session expired or invalid — clear and force re-login
       localStorage.removeItem('ws_tenant_id');
@@ -43,23 +55,13 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (tenantId, apiKey) => {
     setError(null);
-    // Validate credentials and get business info
     const data = await authApi.getTenantInfo(tenantId.trim(), apiKey.trim());
-    const biz = data.business || {};
 
     // Store credentials
     localStorage.setItem('ws_tenant_id', tenantId.trim());
     localStorage.setItem('ws_api_key', apiKey.trim());
 
-    setUser({
-      tenantId: tenantId.trim(),
-      name: biz.name || 'My Business',
-      businessMode: biz.businessMode || 'RESTAURANT',
-      adminPhone: biz.adminPhone || '',
-      whatsapp: data.tenant?.whatsapp || {},
-      plan: data.tenant?.plan || 'FREE',
-      status: data.tenant?.status || 'ACTIVE',
-    });
+    setUser(buildUserFromResponse(tenantId.trim(), data));
   }, []);
 
   const logout = useCallback(() => {

@@ -1,32 +1,43 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingCart, Calendar, Users, MessageSquare, TrendingUp, Zap, ArrowRight } from 'lucide-react';
+import { ShoppingCart, Calendar, Users, MessageSquare, TrendingUp, Zap, ArrowRight, CheckCircle2, Circle } from 'lucide-react';
 import { useAuth } from '../store/AuthContext.jsx';
 import { dashApi, getModeConfig, needsBookings } from '../api.js';
-import { StatCard, Card, Btn, StatusBadge, EmptyState, Spinner } from '../components/ui.jsx';
+import { StatCard, Card, Btn, StatusBadge, EmptyState, Spinner, SectionHeading } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
-function QuickAction({ icon: Icon, label, to, color = 'green' }) {
+function QuickAction({ icon: Icon, label, desc, to, color = 'green' }) {
   const navigate = useNavigate();
-  const colors = { green: 'var(--primary-dim)', amber: 'var(--amber-dim)', blue: 'var(--blue-dim)' };
-  const textColors = { green: 'var(--primary)', amber: 'var(--amber)', blue: 'var(--blue)' };
+  const palette = {
+    green:  { bg: 'var(--primary-dim)', border: 'var(--border-accent)', icon: 'var(--primary)',  text: 'var(--primary)' },
+    amber:  { bg: 'var(--amber-dim)',   border: 'rgba(217,119,6,0.2)', icon: 'var(--amber)',   text: 'var(--amber)' },
+    blue:   { bg: 'var(--blue-dim)',    border: 'rgba(37,99,235,0.2)', icon: 'var(--blue)',    text: 'var(--blue)' },
+    purple: { bg: 'var(--purple-dim)',  border: 'rgba(124,58,237,0.2)',icon: 'var(--purple)',  text: 'var(--purple)' },
+  };
+  const c = palette[color] || palette.green;
   return (
-    <button
-      onClick={() => navigate(to)}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 12,
-        padding: '14px 16px', background: colors[color],
-        border: `1.5px solid ${colors[color]}`, borderRadius: 'var(--radius-lg)',
-        cursor: 'pointer', width: '100%', textAlign: 'left', transition: 'all 0.15s',
-      }}
-      onMouseEnter={e => e.currentTarget.style.opacity = '0.8'}
-      onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+    <button onClick={() => navigate(to)} style={{
+      display: 'flex', alignItems: 'center', gap: 14,
+      padding: '14px 16px',
+      background: c.bg, border: `1.5px solid ${c.border}`,
+      borderRadius: 'var(--r-lg)', cursor: 'pointer', width: '100%', textAlign: 'left',
+      transition: 'all 0.15s',
+    }}
+      onMouseEnter={e => { e.currentTarget.style.filter = 'brightness(0.95)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+      onMouseLeave={e => { e.currentTarget.style.filter = ''; e.currentTarget.style.transform = ''; }}
     >
-      <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <Icon size={18} color={textColors[color]} />
+      <div style={{
+        width: 38, height: 38, borderRadius: 10,
+        background: 'rgba(255,255,255,0.7)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      }}>
+        <Icon size={18} color={c.icon} />
       </div>
-      <span style={{ fontSize: '0.875rem', fontWeight: 600, color: textColors[color], flex: 1 }}>{label}</span>
-      <ArrowRight size={14} color={textColors[color]} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '0.875rem', fontWeight: 700, color: c.text, letterSpacing: '-0.01em' }}>{label}</div>
+        {desc && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 1 }}>{desc}</div>}
+      </div>
+      <ArrowRight size={14} color={c.icon} />
     </button>
   );
 }
@@ -42,135 +53,133 @@ export default function DashboardPage() {
 
   useEffect(() => {
     dashApi.overview()
-      .then(r => setOverview(r.data || r))
+      .then(r => setOverview(r.data))
       .catch(err => toast.error(err.message || 'Failed to load dashboard'))
       .finally(() => setLoading(false));
   }, []);
 
   const d = overview?.last30Days || {};
-  const whatsappActive = !!(user?.whatsapp?.connected || user?.whatsapp?.phoneNumberId);
+  const whatsappActive = !!(user?.whatsapp?.connected);
+  const bizFromOverview = overview?.business || {};
+
+  const setupItems = [
+    { label: 'Business Info',      done: !!user?.name && user.name !== 'My Business', to: '/setup/business' },
+    { label: 'WhatsApp Connected', done: whatsappActive,                               to: '/setup/whatsapp' },
+    { label: 'Opening Hours',      done: !!(bizFromOverview.hours?.enabled),           to: '/setup/hours' },
+    { label: 'Bot Messages',       done: !!(bizFromOverview.customMessages?.welcome),  to: '/setup/bot' },
+  ];
+  const setupDone = setupItems.filter(i => i.done).length;
+
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
   return (
     <div className="fade-in">
       {/* Greeting */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.025em', marginBottom: 4 }}>
-          Good day, {user?.name} {modeConfig.emoji}
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{
+          fontFamily: 'var(--font-display)', fontSize: 'clamp(1.2rem, 3vw, 1.5rem)',
+          fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.03em', marginBottom: 4,
+        }}>
+          {greeting}, {user?.name} {modeConfig.emoji}
         </h1>
-        <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-          Here's what's happening in the last 30 days
-        </p>
+        <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Last 30 days snapshot</p>
       </div>
 
-      {/* WhatsApp warning banner */}
+      {/* WhatsApp warning */}
       {!whatsappActive && (
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 12,
-          padding: '14px 18px', marginBottom: 24,
-          background: 'var(--amber-dim)', border: '1.5px solid rgba(217,119,6,0.2)',
-          borderRadius: 'var(--radius-lg)',
+          display: 'flex', alignItems: 'center', gap: 14,
+          padding: '14px 18px', marginBottom: 22,
+          background: 'var(--amber-dim)', border: '1.5px solid rgba(217,119,6,0.22)',
+          borderRadius: 'var(--r-lg)',
         }}>
-          <Zap size={18} color="var(--amber)" style={{ flexShrink: 0 }} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--amber)', marginBottom: 2 }}>WhatsApp not connected</div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Your AI bot won't respond to customers until WhatsApp is connected.</div>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(217,119,6,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Zap size={18} color="var(--amber)" />
           </div>
-          <Btn size="sm" variant="amber" onClick={() => navigate('/setup/whatsapp')}>
-            Connect Now
-          </Btn>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--amber)', marginBottom: 2 }}>WhatsApp not connected</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Your AI bot won't respond until WhatsApp is connected.</div>
+          </div>
+          <Btn size="sm" variant="amber" onClick={() => navigate('/setup/whatsapp')} style={{ flexShrink: 0 }}>Connect</Btn>
         </div>
       )}
 
-      {/* Stats grid */}
       {loading ? (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0' }}>
           <Spinner size={32} />
         </div>
       ) : (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 24 }}>
-            {!hasBookings && (
-              <StatCard
-                label="Orders (30d)"
-                value={d.orders ?? 0}
-                icon={ShoppingCart}
-                color="green"
-                sub={d.orders === 0 ? 'No orders yet — bot is waiting' : `${d.orders} received`}
-              />
+        <div className="stagger">
+          {/* Stats */}
+          <div className="grid-auto" style={{ marginBottom: 22 }}>
+            {!hasBookings ? (
+              <StatCard label="Orders (30d)" value={d.orders ?? 0} icon={ShoppingCart} color="green"
+                sub={d.orders === 0 ? 'Waiting for first order' : `${d.orders} received`} />
+            ) : (
+              <StatCard label="Bookings (30d)" value={d.bookings ?? 0} icon={Calendar} color="green"
+                sub={d.bookings === 0 ? 'No bookings yet' : `${d.bookings} scheduled`} />
             )}
-            {hasBookings && (
-              <StatCard
-                label="Bookings (30d)"
-                value={d.bookings ?? 0}
-                icon={Calendar}
-                color="green"
-                sub={d.bookings === 0 ? 'No bookings yet' : `${d.bookings} scheduled`}
-              />
-            )}
-            <StatCard
-              label="Customers"
-              value={d.customers ?? 0}
-              icon={Users}
-              color="blue"
-              sub="Total unique customers"
-            />
+            <StatCard label="Customers" value={d.customers ?? 0} icon={Users} color="blue" sub="Total unique" />
             <StatCard
               label="Revenue (30d)"
               value={d.revenue != null ? `D ${Number(d.revenue).toFixed(0)}` : '—'}
-              icon={TrendingUp}
-              color="amber"
-              sub="Confirmed orders"
+              icon={TrendingUp} color="amber" sub="Confirmed orders"
             />
-            <StatCard
-              label="Live Sessions"
-              value={overview?.activeHumanSessions ?? 0}
-              icon={MessageSquare}
-              color="purple"
-              sub="Human-mode active"
-            />
+            <StatCard label="Live Sessions" value={overview?.activeHumanSessions ?? 0} icon={MessageSquare} color="purple" sub="Human-mode active" />
           </div>
 
-          {/* Quick actions + recent */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
+          {/* Quick actions + setup */}
+          <div className="grid-2" style={{ gap: 18 }}>
             <Card>
-              <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.95rem', marginBottom: 16, color: 'var(--text-primary)' }}>Quick Actions</h3>
+              <SectionHeading>Quick Actions</SectionHeading>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {!hasBookings && <QuickAction icon={ShoppingCart} label="View Orders" to="/orders" />}
-                {hasBookings && <QuickAction icon={Calendar} label="View Bookings" to="/bookings" />}
-                <QuickAction icon={MessageSquare} label="Live Sessions" to="/sessions" color="amber" />
-                <QuickAction icon={Users} label="Customers" to="/customers" color="blue" />
+                {!hasBookings
+                  ? <QuickAction icon={ShoppingCart} label="View Orders"    desc="Manage customer orders"      to="/orders" />
+                  : <QuickAction icon={Calendar}     label="View Bookings"  desc="Manage appointments"         to="/bookings" />}
+                <QuickAction icon={MessageSquare} label="Live Sessions" desc="Monitor conversations" to="/sessions" color="amber" />
+                <QuickAction icon={Users}         label="Customers"     desc="Browse customer list"  to="/customers" color="blue" />
+                <QuickAction icon={TrendingUp}    label="Analytics"     desc="Performance report"   to="/analytics" color="purple" />
               </div>
             </Card>
 
             <Card>
-              <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.95rem', marginBottom: 16, color: 'var(--text-primary)' }}>Setup Status</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {[
-                  { label: 'Business Info', done: !!user?.name, to: '/setup/business' },
-                  { label: 'WhatsApp Connected', done: whatsappActive, to: '/setup/whatsapp' },
-                  { label: 'Opening Hours', done: false, to: '/setup/hours' },
-                  { label: 'Bot Messages', done: false, to: '/setup/bot' },
-                ].map(item => (
-                  <button
-                    key={item.label}
-                    onClick={() => navigate(item.to)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', textAlign: 'left' }}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.92rem', letterSpacing: '-0.02em' }}>Setup Status</h3>
+                <span style={{
+                  fontSize: '0.72rem', fontWeight: 800, color: setupDone === setupItems.length ? 'var(--primary)' : 'var(--text-muted)',
+                  background: setupDone === setupItems.length ? 'var(--primary-dim)' : 'var(--bg-overlay)',
+                  padding: '3px 9px', borderRadius: 99, letterSpacing: '0.04em',
+                }}>{setupDone}/{setupItems.length}</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {setupItems.map(item => (
+                  <button key={item.label} onClick={() => navigate(item.to)} style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '6px 8px',
+                    textAlign: 'left', borderRadius: 'var(--r-md)', transition: 'background 0.12s',
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-overlay)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}
                   >
-                    <div style={{
-                      width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-                      background: item.done ? 'var(--primary)' : 'var(--bg-overlay)',
-                      border: `2px solid ${item.done ? 'var(--primary)' : 'var(--border-mid)'}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      {item.done && <span style={{ color: '#fff', fontSize: '0.65rem', fontWeight: 700 }}>✓</span>}
-                    </div>
-                    <span style={{ fontSize: '0.875rem', color: item.done ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: item.done ? 600 : 400 }}>{item.label}</span>
+                    {item.done
+                      ? <CheckCircle2 size={18} color="var(--primary)" style={{ flexShrink: 0 }} />
+                      : <Circle size={18} color="var(--border-strong)" style={{ flexShrink: 0 }} />
+                    }
+                    <span style={{
+                      fontSize: '0.875rem',
+                      color: item.done ? 'var(--text-primary)' : 'var(--text-muted)',
+                      fontWeight: item.done ? 600 : 400,
+                      letterSpacing: '-0.01em',
+                    }}>{item.label}</span>
+                    {!item.done && <ArrowRight size={12} color="var(--text-ghost)" style={{ marginLeft: 'auto' }} />}
                   </button>
                 ))}
               </div>
             </Card>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

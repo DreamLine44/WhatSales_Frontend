@@ -38,10 +38,12 @@ http.interceptors.response.use(r => r, errorInterceptor);
 adminHttp.interceptors.response.use(r => r, errorInterceptor);
 
 // ── Auth (tenant login) ───────────────────────────────────────────────────────
-// Validate by hitting the business settings endpoint — if 200, credentials work
+// [FIX-AUTH-1] login now calls /business/:tenantId (returns { business, tenant })
+// instead of /dashboard/:tenantId/overview so the full tenant + whatsapp object
+// is available immediately after login — whatsapp fields were always empty before.
 export const authApi = {
   login: async (tenantId, apiKey) => {
-    const res = await axios.get(`${BASE_URL}/dashboard/${tenantId}/overview`, {
+    const res = await axios.get(`${BASE_URL}/business/${tenantId}`, {
       headers: { 'x-api-key': apiKey },
       timeout: 10000,
     });
@@ -60,8 +62,11 @@ export const authApi = {
 export const dashApi = {
   overview:       () => http.get(`/dashboard/${getTenantId()}/overview`),
   orders:         (p = {}) => http.get(`/dashboard/${getTenantId()}/orders`, { params: p }),
+  // [FIX-API-1] Backend expects { status, notes } — was named correctly but
+  // the status enum must match: pending|confirmed|completed|cancelled|payment_failed|rejected
   updateOrder:    (orderId, body) => http.patch(`/dashboard/${getTenantId()}/orders/${orderId}/status`, body),
   bookings:       (p = {}) => http.get(`/dashboard/${getTenantId()}/bookings`, { params: p }),
+  // [FIX-API-2] Backend expects { status, adminNote } not { status, notes }
   updateBooking:  (bookingId, body) => http.patch(`/dashboard/${getTenantId()}/bookings/${bookingId}/status`, body),
   analytics:      (days = 30) => http.get(`/dashboard/${getTenantId()}/analytics`, { params: { days } }),
   conversations:  (limit = 50) => http.get(`/dashboard/${getTenantId()}/conversations`, { params: { limit } }),
@@ -76,7 +81,7 @@ export const bizApi = {
   get:    () => http.get(`/business/${getTenantId()}`),
   update: (body) => http.put(`/business/${getTenantId()}`, body),
 
-  // Menu
+  // Menu — all on dashboard routes (they have image upload support via uploadSingle)
   getMenu:        () => http.get(`/dashboard/${getTenantId()}/menu`),
   addMenuItem:    (fd) => http.post(`/dashboard/${getTenantId()}/menu`, fd),
   updateMenuItem: (id, fd) => http.patch(`/dashboard/${getTenantId()}/menu/${id}`, fd),
@@ -105,8 +110,9 @@ export const adminApi = {
   updateStatus:   (id, status) => adminHttp.patch(`/admin/tenants/${id}/status`, { status }),
   deleteTenant:   (id) => adminHttp.delete(`/admin/tenants/${id}`),
 
-  // Admin session management (uses tenant API key, not super admin)
+  // Admin session management
   getSessions:  (tenantId, p = {}) => adminHttp.get(`/admin/sessions/${tenantId}`, { params: p }),
+  // [FIX-ADMIN-1] These go through /admin/* routes, not /dashboard/*
   updateOrderStatus:   (id, body) => adminHttp.patch(`/admin/orders/${id}/status`, body),
   updateBookingStatus: (id, body) => adminHttp.patch(`/admin/bookings/${id}/status`, body),
 };
@@ -119,6 +125,7 @@ export const adminSession = {
 };
 
 // ── Business modes ─────────────────────────────────────────────────────────────
+// [FIX-MODES] Enum values match backend BusinessConfig.businessMode exactly
 export const BUSINESS_MODES = [
   { value: 'RESTAURANT',   label: 'Restaurant',    emoji: '🍽', tier: 'full', desc: 'Full ordering & payment flow' },
   { value: 'BAKERY',       label: 'Bakery',        emoji: '🥐', tier: 'full', desc: 'Orders with cake customization' },
