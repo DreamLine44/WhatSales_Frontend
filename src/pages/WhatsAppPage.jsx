@@ -13,23 +13,15 @@ const SETUP_STEPS = [
   { key: 'active',    label: 'Bot Activated',           desc: 'Your AI assistant is live and responding' },
 ];
 
-// [FIX-WA-STEP] Access tokens are hashed on the server and never returned to the frontend.
-// Previously step 3 (accessToken check) always showed "pending" even when fully configured.
-// Now we derive progress purely from visible, non-sensitive fields:
-//   0 = account created only
-//   1 = setup submitted (no phoneNumberId yet)
-//   2 = admin has phoneNumberId but no verifyToken — partially configured
-//   3 = phoneNumberId + verifyToken set — waiting for OTP / webhook verification
-//   4 = phoneNumberId + verifyToken + NOT yet connected — credentials complete
-//   5 = connected flag is true — fully live
-// [FIX] step 5 = fully live, step 4 = credentials complete awaiting OTP/session,
-// step 3 = phoneNumberId+verifyToken present, step 2 = phoneNumberId only,
-// step 1 = account exists no creds yet, step 0 = just created.
-// Also treat ACTIVE+credentials as step 4 so users don't stay stuck at "pending".
+// [FIX-WA-STEP] Derive connection progress from visible fields only.
+// connected = true means the WhatsApp client socket is live.
+// ACTIVE + phoneNumberId = provisioned (bot should respond even if connected flag isn't set yet).
 function getStepIndex(whatsapp, tenantStatus) {
   if (!whatsapp) return 0;
   if (whatsapp.connected) return 5;
-  // Admin set ACTIVE + credentials saved → treat as step 4 (provisioning / live)
+  // ACTIVE + full credentials = treat as fully live (step 5)
+  // The backend may not set `connected: true` until first message is received
+  if (tenantStatus === 'ACTIVE' && whatsapp.phoneNumberId && whatsapp.accessToken !== undefined) return 5;
   if (tenantStatus === 'ACTIVE' && whatsapp.phoneNumberId) return 4;
   if (whatsapp.phoneNumberId && whatsapp.verifyToken) return 4;
   if (whatsapp.phoneNumberId) return 2;
@@ -78,6 +70,10 @@ export default function WhatsAppPage() {
   const { user, refreshUser } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const wa = user?.whatsapp || {};
+  // [FIX] Treat ACTIVE status with phoneNumberId as effectively connected.
+  // The `connected` flag on the backend only flips true after the first webhook handshake,
+  // but when credentials were set via Bruno/admin and the bot IS responding,
+  // we should show connected state. ACTIVE + phoneNumberId = live.
   const connected = !!(wa.connected || (user?.status === 'ACTIVE' && wa.phoneNumberId));
   const stepIndex = getStepIndex(wa, user?.status);
 

@@ -471,7 +471,7 @@ export function Modal({ children, onClose, maxWidth = 540, title }) {
       <div style={{
         position: 'relative', width: '100%', maxWidth,
         background: 'var(--bg-surface)', borderRadius: 'var(--r-xl)',
-        padding: title ? '0' : '28px',
+        padding: title ? '0' : '24px',
         boxShadow: 'var(--sh-xl)',
         border: '1.5px solid var(--border)',
         maxHeight: '94vh', overflowY: 'auto',

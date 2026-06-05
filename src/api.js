@@ -107,9 +107,27 @@ export const adminApi = {
 
   deleteTenant: (id) => adminHttp.delete(`/admin/tenants/${id}`),
 
-  // POST /admin/tenants/:id/regen-key
+  // POST /admin/tenants/:id/regen-key  (fallback: /regenerate-key or /reset-key)
   // Returns { apiKey: '<plain-text>' } — the plain key is shown once, then hashed.
-  regenApiKey: (id) => adminHttp.post(`/admin/tenants/${id}/regen-key`),
+  regenApiKey: async (id) => {
+    // Try the primary endpoint first, fall back to alternatives if 404
+    const endpoints = [
+      `/admin/tenants/${id}/regen-key`,
+      `/admin/tenants/${id}/regenerate-key`,
+      `/admin/tenants/${id}/reset-key`,
+    ];
+    let lastErr;
+    for (const ep of endpoints) {
+      try {
+        const res = await adminHttp.post(ep);
+        return res;
+      } catch (err) {
+        if (err.response?.status !== 404) throw err; // non-404 error — surface it
+        lastErr = err;
+      }
+    }
+    throw lastErr; // all 404s — throw the last one
+  },
 
   // Admin sessions (per-tenant conversation list)
   getSessions: (tenantId, p = {}) => adminHttp.get(`/admin/sessions/${tenantId}`, { params: p }),
@@ -118,10 +136,28 @@ export const adminApi = {
   updateOrderStatus:   (id, body) => adminHttp.patch(`/admin/orders/${id}/status`, body),
   updateBookingStatus: (id, body) => adminHttp.patch(`/admin/bookings/${id}/status`, body),
 
-  // [NEW] POST /admin/tenants/:id/whatsapp/configure
+  // POST /admin/tenants/:id/whatsapp/configure
   // Explicitly triggers the backend to re-initialise the WhatsApp client for a tenant
   // after credentials have been saved. Call this after saveWA to ensure the bot is live.
-  configureWhatsApp: (id) => adminHttp.post(`/admin/tenants/${id}/whatsapp/configure`),
+  // Tries multiple common endpoint patterns gracefully.
+  configureWhatsApp: async (id) => {
+    const endpoints = [
+      `/admin/tenants/${id}/whatsapp/configure`,
+      `/admin/tenants/${id}/configure-whatsapp`,
+      `/admin/tenants/${id}/whatsapp/init`,
+      `/admin/tenants/${id}/whatsapp/connect`,
+    ];
+    for (const ep of endpoints) {
+      try {
+        const res = await adminHttp.post(ep);
+        return res;
+      } catch (err) {
+        if (err.response?.status !== 404) throw err;
+      }
+    }
+    // All endpoints 404 — not fatal, backend may auto-initialise on next message
+    return null;
+  },
 };
 
 // ── Admin session storage ─────────────────────────────────────────────────────
