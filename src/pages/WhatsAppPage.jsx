@@ -9,14 +9,29 @@ const SETUP_STEPS = [
   { key: 'requested', label: 'Setup Request Submitted', desc: 'Your request was sent to our team' },
   { key: 'admin',     label: 'Admin Processing',        desc: 'Our team is setting up your WhatsApp connection' },
   { key: 'otp',       label: 'OTP Verification',        desc: 'Meta sends a code to your WhatsApp number' },
-  { key: 'connected', label: 'WhatsApp Connected',      desc: 'Your number is linked to the platform' },
+  { key: 'connected', label: 'WhatsApp Connected',      desc: 'Your number is linked and bot is initialising' },
   { key: 'active',    label: 'Bot Activated',           desc: 'Your AI assistant is live and responding' },
 ];
 
-function getStepIndex(whatsapp) {
+// [FIX-WA-STEP] Access tokens are hashed on the server and never returned to the frontend.
+// Previously step 3 (accessToken check) always showed "pending" even when fully configured.
+// Now we derive progress purely from visible, non-sensitive fields:
+//   0 = account created only
+//   1 = setup submitted (no phoneNumberId yet)
+//   2 = admin has phoneNumberId but no verifyToken — partially configured
+//   3 = phoneNumberId + verifyToken set — waiting for OTP / webhook verification
+//   4 = phoneNumberId + verifyToken + NOT yet connected — credentials complete
+//   5 = connected flag is true — fully live
+// [FIX] step 5 = fully live, step 4 = credentials complete awaiting OTP/session,
+// step 3 = phoneNumberId+verifyToken present, step 2 = phoneNumberId only,
+// step 1 = account exists no creds yet, step 0 = just created.
+// Also treat ACTIVE+credentials as step 4 so users don't stay stuck at "pending".
+function getStepIndex(whatsapp, tenantStatus) {
   if (!whatsapp) return 0;
   if (whatsapp.connected) return 5;
-  if (whatsapp.phoneNumberId && whatsapp.accessToken) return 3;
+  // Admin set ACTIVE + credentials saved → treat as step 4 (provisioning / live)
+  if (tenantStatus === 'ACTIVE' && whatsapp.phoneNumberId) return 4;
+  if (whatsapp.phoneNumberId && whatsapp.verifyToken) return 4;
   if (whatsapp.phoneNumberId) return 2;
   return 1;
 }
@@ -31,7 +46,6 @@ function StepItem({ step, status, isLast }) {
 
   return (
     <div style={{ display: 'flex', gap: 14, position: 'relative' }}>
-      {/* Line */}
       {!isLast && (
         <div style={{
           position: 'absolute', left: 13, top: 28, bottom: -4, width: 2,
@@ -39,7 +53,6 @@ function StepItem({ step, status, isLast }) {
           borderRadius: 1,
         }} />
       )}
-      {/* Circle */}
       <div style={{
         width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
         background: s.circle, border: `2px solid ${s.border}`,
@@ -49,7 +62,6 @@ function StepItem({ step, status, isLast }) {
         {status === 'active' && <Loader2 size={12} color="var(--amber)" style={{ animation: 'spin 1s linear infinite' }} />}
         {status === 'pending'&& <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--border-mid)', display: 'block' }} />}
       </div>
-      {/* Content */}
       <div style={{ flex: 1, paddingBottom: isLast ? 0 : 20 }}>
         <div style={{ fontSize: '0.875rem', fontWeight: status === 'pending' ? 500 : 700, color: s.label, letterSpacing: '-0.01em' }}>
           {step.label}
@@ -66,8 +78,19 @@ export default function WhatsAppPage() {
   const { user, refreshUser } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const wa = user?.whatsapp || {};
-  const connected = !!wa.connected;
-  const stepIndex = getStepIndex(wa);
+  const connected = !!(wa.connected || (user?.status === 'ACTIVE' && wa.phoneNumberId));
+  const stepIndex = getStepIndex(wa, user?.status);
+
+  // [FIX-POLL] When ACTIVE+configured but not yet showing as fully live,
+  // auto-refresh every 15s so the UI updates once the bot initialises.
+  useEffect(() => {
+    if (wa.connected) return; // already live, no need to poll
+    if (user?.status !== 'ACTIVE') return; // not activated yet
+    const timer = setInterval(() => {
+      refreshUser().catch(() => {});
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [wa.connected, user?.status, refreshUser]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -77,7 +100,10 @@ export default function WhatsAppPage() {
   };
 
   const apiBase    = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up.railway.app';
-  const webhookUrl = `${apiBase}/webhook`;
+  // [FIX-WA-WEBHOOK] Webhook URL must include the tenant ID so the backend can route messages correctly
+  const webhookUrl = user?.tenantId
+    ? `${apiBase}/webhook/${user.tenantId}`
+    : `${apiBase}/webhook`;
 
   return (
     <div className="fade-in">
@@ -90,7 +116,7 @@ export default function WhatsAppPage() {
         }
       />
 
-      {/* Status card */}
+      {/* [FIX] Status card — green if connected OR provisioned (ACTIVE+creds) */}
       <Card style={{
         marginBottom: 20,
         borderColor: connected ? 'var(--border-accent)' : 'var(--border)',
@@ -104,7 +130,9 @@ export default function WhatsAppPage() {
           }}>
             {connected
               ? <CheckCircle2 size={28} color="var(--primary)" />
-              : <AlertCircle  size={28} color="var(--text-muted)" />}
+              : wa.phoneNumberId && user?.status === 'ACTIVE'
+                ? <Wifi size={28} color="var(--primary)" />
+                : <AlertCircle size={28} color="var(--text-muted)" />}
           </div>
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.05rem', letterSpacing: '-0.025em', marginBottom: 4 }}>
@@ -113,11 +141,15 @@ export default function WhatsAppPage() {
             <div style={{ fontSize: '0.83rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
               {connected
                 ? `Your bot is live on ${wa.phone || 'your WhatsApp number'}. Customers can start chatting right now.`
-                : 'Your WhatsApp number has not been connected yet. Contact your administrator to start setup.'}
+                : wa.phoneNumberId
+                  ? (user?.status === 'ACTIVE'
+                      ? 'Your bot is provisioned and going live. Messages will be handled shortly.'
+                      : 'Credentials are configured. Waiting for webhook verification or OTP to complete setup.')
+                  : 'Your WhatsApp number has not been connected yet. Contact your administrator to start setup.'}
             </div>
           </div>
-          <Badge color={connected ? 'green' : 'amber'} dot>
-            {connected ? 'Active' : 'Pending Setup'}
+          <Badge color={connected ? 'green' : wa.phoneNumberId ? 'blue' : 'amber'} dot>
+            {connected ? 'Active' : wa.phoneNumberId ? (user?.status === 'ACTIVE' ? 'Live' : 'Configuring') : 'Pending Setup'}
           </Badge>
         </div>
 
@@ -171,6 +203,7 @@ export default function WhatsAppPage() {
           </p>
           <CopyField label="Tenant ID" value={user?.tenantId || '—'} />
           {wa.phoneNumberId && <CopyField label="Phone Number ID" value={wa.phoneNumberId} />}
+          {wa.phone         && <CopyField label="WhatsApp Number"  value={wa.phone} />}
 
           <InfoBanner type="warning" style={{ marginTop: 16 }}>
             <div style={{ fontWeight: 800, marginBottom: 6, fontSize: '0.75rem', letterSpacing: '0.05em', textTransform: 'uppercase' }}>HOW TO CONNECT</div>

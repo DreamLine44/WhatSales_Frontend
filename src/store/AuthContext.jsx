@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { authApi } from '../api.js';
 
 const AuthContext = createContext(null);
@@ -17,7 +17,6 @@ function buildUserFromResponse(tenantId, data) {
     businessMode: biz.businessMode || 'RESTAURANT',
     adminPhone:   biz.adminPhone   || '',
     // [FIX-AUTH-2] whatsapp comes from the tenant doc, not the business config.
-    // It was always {} because /overview doesn't include tenant.whatsapp.
     whatsapp:     tenant.whatsapp  || {},
     plan:         tenant.plan      || 'FREE',
     status:       tenant.status    || 'ACTIVE',
@@ -29,18 +28,9 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
 
-  // On mount, try to restore session from localStorage
-  useEffect(() => {
-    const tenantId = localStorage.getItem('ws_tenant_id');
-    const apiKey   = localStorage.getItem('ws_api_key');
-    if (tenantId && apiKey) {
-      restore(tenantId, apiKey);
-    } else {
-      setLoading(false);
-    }
-  }, []);
-
-  const restore = async (tenantId, apiKey) => {
+  // [FIX-AUTH-3] Define restore with useCallback BEFORE useEffect to avoid
+  // the stale-closure / undefined-reference bug from calling it in useEffect deps.
+  const restore = useCallback(async (tenantId, apiKey) => {
     try {
       const data = await authApi.getTenantInfo(tenantId, apiKey);
       setUser(buildUserFromResponse(tenantId, data));
@@ -51,7 +41,18 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // On mount, try to restore session from localStorage
+  useEffect(() => {
+    const tenantId = localStorage.getItem('ws_tenant_id');
+    const apiKey   = localStorage.getItem('ws_api_key');
+    if (tenantId && apiKey) {
+      restore(tenantId, apiKey);
+    } else {
+      setLoading(false);
+    }
+  }, [restore]);
 
   const login = useCallback(async (tenantId, apiKey) => {
     setError(null);
@@ -74,7 +75,7 @@ export function AuthProvider({ children }) {
     const tenantId = localStorage.getItem('ws_tenant_id');
     const apiKey   = localStorage.getItem('ws_api_key');
     if (tenantId && apiKey) await restore(tenantId, apiKey);
-  }, []);
+  }, [restore]);
 
   return (
     <AuthContext.Provider value={{ user, loading, error, login, logout, refreshUser }}>

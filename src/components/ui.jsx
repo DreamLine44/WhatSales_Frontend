@@ -1,6 +1,6 @@
-// ── WhatSales UI Kit — upgraded ───────────────────────────────────────────────
+// ── WhatSales UI Kit — v2 ─────────────────────────────────────────────────────
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, Copy, CheckCircle2, Eye, EyeOff, X, AlertTriangle } from 'lucide-react';
+import { Loader2, Copy, CheckCircle2, Eye, EyeOff, X, AlertTriangle, Search, TrendingUp, TrendingDown } from 'lucide-react';
 
 // ── Logo ──────────────────────────────────────────────────────────────────────
 export function Logo({ size = 32, light = false }) {
@@ -80,6 +80,48 @@ export function Input({ label, hint, error, style = {}, wrapStyle = {}, ...props
       />
       {hint && <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{hint}</span>}
       {error && <span style={{ fontSize: '0.74rem', color: 'var(--red)', display: 'flex', alignItems: 'center', gap: 4 }}><AlertTriangle size={11} />{error}</span>}
+    </div>
+  );
+}
+
+// ── Search Input ──────────────────────────────────────────────────────────────
+export function SearchInput({ value, onChange, placeholder = 'Search…', onClear, style = {} }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <div style={{ position: 'relative', ...style }}>
+      <Search size={15} style={{
+        position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)',
+        color: focused ? 'var(--primary)' : 'var(--text-muted)', pointerEvents: 'none',
+        transition: 'color 0.15s',
+      }} />
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        placeholder={placeholder}
+        style={{
+          width: '100%', padding: '10px 36px 10px 40px',
+          border: `1.5px solid ${focused ? 'var(--primary)' : 'var(--border-mid)'}`,
+          borderRadius: 'var(--r-lg)', fontFamily: 'var(--font-body)', fontSize: '0.875rem',
+          background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none',
+          transition: 'border-color 0.15s, box-shadow 0.15s',
+          boxShadow: focused ? '0 0 0 3px var(--primary-dim)' : 'none',
+          boxSizing: 'border-box',
+        }}
+      />
+      {value && (
+        <button
+          onClick={onClear || (() => onChange(''))}
+          style={{
+            position: 'absolute', right: 11, top: '50%', transform: 'translateY(-50%)',
+            color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: 3,
+            borderRadius: 4, transition: 'color 0.12s',
+          }}
+        >
+          <X size={13} />
+        </button>
+      )}
     </div>
   );
 }
@@ -188,14 +230,22 @@ export function Toggle({ checked, onChange, label, hint }) {
 }
 
 // ── Card ──────────────────────────────────────────────────────────────────────
-export function Card({ children, style = {}, pad = true, ...props }) {
+export function Card({ children, style = {}, pad = true, hover = false, ...props }) {
+  const [hovered, setHovered] = useState(false);
   return (
-    <div style={{
-      background: 'var(--bg-surface)', border: '1.5px solid var(--border)',
-      borderRadius: 'var(--r-lg)', boxShadow: 'var(--sh-sm)',
-      padding: pad ? '20px 22px' : 0,
-      ...style,
-    }} {...props}>
+    <div
+      style={{
+        background: 'var(--bg-surface)', border: '1.5px solid var(--border)',
+        borderRadius: 'var(--r-lg)', boxShadow: hover && hovered ? 'var(--sh-md)' : 'var(--sh-sm)',
+        padding: pad ? '20px 22px' : 0,
+        transform: hover && hovered ? 'translateY(-1px)' : 'none',
+        transition: hover ? 'box-shadow 0.15s, transform 0.15s' : 'none',
+        ...style,
+      }}
+      onMouseEnter={hover ? () => setHovered(true) : undefined}
+      onMouseLeave={hover ? () => setHovered(false) : undefined}
+      {...props}
+    >
       {children}
     </div>
   );
@@ -308,7 +358,7 @@ export function EmptyState({ icon: Icon, title, description, action }) {
 }
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
-export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend }) {
+export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend, trendLabel }) {
   const colors = {
     green:  { icon: '#dcfce7',  text: '#15803d' },
     amber:  { icon: '#fef3c7',  text: '#b45309' },
@@ -319,15 +369,20 @@ export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend
     gray:   { icon: 'var(--bg-overlay)', text: 'var(--text-muted)' },
   };
   const c = colors[color] || colors.green;
+  const [hovered, setHovered] = useState(false);
+
   return (
     <div style={{
       background: 'var(--bg-surface)', border: '1.5px solid var(--border)',
       borderRadius: 'var(--r-lg)', padding: '18px 20px',
-      boxShadow: 'var(--sh-sm)', display: 'flex', alignItems: 'flex-start', gap: 14,
+      boxShadow: hovered ? 'var(--sh-md)' : 'var(--sh-sm)',
+      display: 'flex', alignItems: 'flex-start', gap: 14,
       transition: 'box-shadow 0.15s, transform 0.15s',
+      transform: hovered ? 'translateY(-1px)' : 'none',
+      cursor: 'default',
     }}
-      onMouseEnter={e => { e.currentTarget.style.boxShadow = 'var(--sh-md)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'var(--sh-sm)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       {Icon && (
         <div style={{
@@ -337,10 +392,28 @@ export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend
           <Icon size={20} color={c.text} />
         </div>
       )}
-      <div style={{ minWidth: 0 }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 5 }}>{label}</div>
-        <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', letterSpacing: '-0.04em', lineHeight: 1 }}>{value ?? '—'}</div>
-        {sub && <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.4 }}>{sub}</div>}
+        <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', letterSpacing: '-0.04em', lineHeight: 1 }}>
+          {typeof value === 'string' && value.includes(' ')
+            ? <><span style={{ fontSize: '1.1rem', fontWeight: 700, opacity: 0.6 }}>{value.split(' ')[0]}</span>{' '}{value.split(' ')[1]}</>
+            : (value ?? '—')}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
+          {sub && <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{sub}</div>}
+          {trend != null && (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 2,
+              fontSize: '0.71rem', fontWeight: 700,
+              color: trend >= 0 ? 'var(--primary)' : 'var(--red)',
+              background: trend >= 0 ? 'var(--primary-dim)' : 'var(--red-dim)',
+              padding: '1px 6px', borderRadius: 99,
+            }}>
+              {trend >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+              {Math.abs(trend)}%
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -351,6 +424,25 @@ export function Spinner({ size = 24, color = 'var(--primary)' }) {
   return <Loader2 size={size} color={color} style={{ animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />;
 }
 
+// ── Skeleton ──────────────────────────────────────────────────────────────────
+export function Skeleton({ width = '100%', height = 16, style = {} }) {
+  return (
+    <div className="skeleton" style={{ width, height, ...style }} />
+  );
+}
+
+export function SkeletonCard({ lines = 3 }) {
+  return (
+    <Card>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {Array.from({ length: lines }).map((_, i) => (
+          <Skeleton key={i} height={14} width={i === lines - 1 ? '60%' : '100%'} />
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 // ── Divider ───────────────────────────────────────────────────────────────────
 export function Divider({ style = {} }) {
   return <div style={{ height: 1, background: 'var(--border)', width: '100%', ...style }} />;
@@ -358,14 +450,12 @@ export function Divider({ style = {} }) {
 
 // ── Modal overlay ─────────────────────────────────────────────────────────────
 export function Modal({ children, onClose, maxWidth = 540, title }) {
-  // Close on Escape
   useEffect(() => {
     const handler = e => { if (e.key === 'Escape') onClose?.(); };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  // Prevent body scroll
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = ''; };
@@ -385,7 +475,7 @@ export function Modal({ children, onClose, maxWidth = 540, title }) {
         boxShadow: 'var(--sh-xl)',
         border: '1.5px solid var(--border)',
         maxHeight: '94vh', overflowY: 'auto',
-        animation: 'slideUp 0.22s ease',
+        animation: 'bounceIn 0.22s ease',
       }}>
         {title && (
           <div style={{
@@ -444,6 +534,7 @@ export function CopyField({ label, value, secret = false }) {
         display: 'flex', alignItems: 'center', gap: 8,
         background: 'var(--bg-overlay)', border: '1.5px solid var(--border)',
         borderRadius: 'var(--r-md)', padding: '9px 12px',
+        transition: 'border-color 0.15s',
       }}>
         <span style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: 'var(--text-primary)', wordBreak: 'break-all', lineHeight: 1.5 }}>
           {secret && !visible ? '•'.repeat(20) : value}
@@ -453,7 +544,7 @@ export function CopyField({ label, value, secret = false }) {
             {visible ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
         )}
-        <button onClick={copy} style={{
+        <button onClick={copy} title={copied ? 'Copied!' : 'Copy'} style={{
           color: copied ? 'var(--primary)' : 'var(--text-muted)',
           display: 'flex', cursor: 'pointer', flexShrink: 0, padding: 2,
           transition: 'color 0.15s',
@@ -520,6 +611,76 @@ export function Tabs({ tabs, active, onChange }) {
           {tab.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ── Pagination ────────────────────────────────────────────────────────────────
+export function Pagination({ page, total, limit, onChange }) {
+  const totalPages = Math.ceil(total / limit);
+  if (totalPages <= 1) return null;
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 20 }}>
+      <Btn variant="ghost" size="sm" disabled={page === 1} onClick={() => onChange(p => p - 1)}>← Previous</Btn>
+      <span style={{
+        fontSize: '0.82rem', color: 'var(--text-muted)', padding: '6px 14px',
+        background: 'var(--bg-overlay)', borderRadius: 'var(--r-md)',
+        border: '1.5px solid var(--border)',
+      }}>
+        Page {page} of {totalPages}
+      </span>
+      <Btn variant="ghost" size="sm" disabled={page >= totalPages} onClick={() => onChange(p => p + 1)}>Next →</Btn>
+    </div>
+  );
+}
+
+// ── Filter bar ────────────────────────────────────────────────────────────────
+export function FilterBar({ children, style = {} }) {
+  return (
+    <div style={{
+      display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
+      marginBottom: 16, ...style,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+// ── Inline select (for filter bars) ──────────────────────────────────────────
+export function InlineSelect({ value, onChange, children, style = {} }) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{
+        padding: '8px 30px 8px 12px', border: '1.5px solid var(--border-mid)',
+        borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.815rem',
+        background: 'var(--bg-surface)', cursor: 'pointer', outline: 'none',
+        appearance: 'none', color: 'var(--text-primary)',
+        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23627065' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+        backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
+        ...style,
+      }}
+    >
+      {children}
+    </select>
+  );
+}
+
+// ── Avatar ────────────────────────────────────────────────────────────────────
+export function Avatar({ name = '', size = 36, colorSeed }) {
+  const colors = ['var(--primary)', 'var(--blue)', 'var(--purple)', 'var(--teal)', 'var(--amber)'];
+  const seed = colorSeed ?? name.charCodeAt(0);
+  const color = colors[seed % colors.length];
+  const initials = name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%', flexShrink: 0,
+      background: color + '18', border: `2px solid ${color}30`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontWeight: 800, color, fontSize: `${size * 0.35}px`,
+    }}>
+      {initials}
     </div>
   );
 }

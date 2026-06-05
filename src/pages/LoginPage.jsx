@@ -6,7 +6,7 @@ import { useAdmin } from '../store/AdminContext.jsx';
 import { Logo, Spinner } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
-const ADMIN_TENANT_ID = 'dreamline44';
+const ADMIN_TENANT_ID = import.meta.env.VITE_ADMIN_TENANT_ID || 'dreamline44';
 
 export default function LoginPage() {
   const navigate = useNavigate();

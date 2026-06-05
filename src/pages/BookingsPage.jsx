@@ -81,7 +81,7 @@ function BookingRow({ booking, onUpdate }) {
   );
 }
 
-export function BookingsPage() {
+function BookingsPage() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');

@@ -3,7 +3,6 @@ import { UtensilsCrossed, Plus, Trash2, Pencil, Check, X, ToggleLeft, ToggleRigh
 import { bizApi } from '../api.js';
 import { useAuth } from '../store/AuthContext.jsx';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Input } from '../components/ui.jsx';
-import { needsMenu } from '../api.js';
 import toast from 'react-hot-toast';
 
 function ItemRow({ item, onDelete, onUpdate }) {

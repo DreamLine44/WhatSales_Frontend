@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ShoppingCart, Calendar, UtensilsCrossed,
@@ -29,17 +29,16 @@ function NavItem({ to, icon: Icon, label, end = false, badge }) {
         <>
           <Icon size={15} style={{ flexShrink: 0, opacity: isActive ? 1 : 0.8 }} />
           <span style={{ flex: 1, letterSpacing: '-0.01em' }}>{label}</span>
-          {badge && (
+          {badge ? (
             <span style={{
               fontSize: '0.65rem', fontWeight: 800, minWidth: 18, height: 18,
               background: 'var(--amber)', color: '#fff',
               borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center',
               padding: '0 4px',
             }}>{badge}</span>
-          )}
-          {isActive && (
+          ) : isActive ? (
             <ChevronRight size={12} style={{ opacity: 0.5 }} />
-          )}
+          ) : null}
         </>
       )}
     </NavLink>
@@ -59,8 +58,8 @@ function NavSection({ label, children }) {
   );
 }
 
-function WaPill({ whatsapp }) {
-  const active = !!(whatsapp?.connected || whatsapp?.phoneNumberId);
+function WaPill({ whatsapp, status }) {
+  const active = !!(whatsapp?.connected || (status === 'ACTIVE' && whatsapp?.phoneNumberId));
   return (
     <div style={{
       display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -76,12 +75,27 @@ function WaPill({ whatsapp }) {
         animation: active ? 'pulse 2s infinite' : 'none',
         flexShrink: 0,
       }} />
-      {active ? 'Bot Active' : 'Not Connected'}
+      {active ? (whatsapp?.connected ? 'Bot Live' : 'Bot Ready') : 'Not Connected'}
     </div>
   );
 }
 
-function SidebarContent({ user, modeConfig, hasBookings, hasMenu, hasServices, onClose, onLogout }) {
+function PlanBadge({ plan }) {
+  const isPro = plan && plan !== 'FREE';
+  return (
+    <span style={{
+      fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.08em',
+      padding: '2px 6px', borderRadius: 99,
+      background: isPro ? 'rgba(217,119,6,0.25)' : 'rgba(255,255,255,0.1)',
+      color: isPro ? '#fbbf24' : 'rgba(255,255,255,0.4)',
+      border: `1px solid ${isPro ? 'rgba(217,119,6,0.3)' : 'rgba(255,255,255,0.1)'}`,
+    }}>
+      {plan || 'FREE'}
+    </span>
+  );
+}
+
+function SidebarContent({ user, modeConfig, hasBookings, hasMenu, hasServices, onClose, onLogout, humanSessionCount }) {
   return (
     <div style={{
       width: 'var(--sidebar-w)', flexShrink: 0,
@@ -124,7 +138,7 @@ function SidebarContent({ user, modeConfig, hasBookings, hasMenu, hasServices, o
           <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" end />
           {!hasBookings && <NavItem to="/orders" icon={ShoppingCart} label="Orders" />}
           {hasBookings && <NavItem to="/bookings" icon={Calendar} label="Bookings" />}
-          <NavItem to="/sessions" icon={MessageSquare} label="Live Sessions" />
+          <NavItem to="/sessions" icon={MessageSquare} label="Live Sessions" badge={humanSessionCount || undefined} />
           <NavItem to="/analytics" icon={BarChart3} label="Analytics" />
           <NavItem to="/customers" icon={Users} label="Customers" />
           <NavItem to="/auto-replies" icon={HelpCircle} label="Auto Replies" />
@@ -143,7 +157,7 @@ function SidebarContent({ user, modeConfig, hasBookings, hasMenu, hasServices, o
       {/* Footer */}
       <div style={{ padding: '12px 10px 16px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
         <div style={{ marginBottom: 10 }}>
-          <WaPill whatsapp={user?.whatsapp} />
+          <WaPill whatsapp={user?.whatsapp} status={user?.status} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
@@ -158,15 +172,13 @@ function SidebarContent({ user, modeConfig, hasBookings, hasMenu, hasServices, o
             <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>
               {user?.name || 'Owner'}
             </div>
-            <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--font-mono)' }}>
-              {user?.plan || 'FREE'}
-            </div>
+            <PlanBadge plan={user?.plan} />
           </div>
           <button onClick={onLogout} title="Sign out" style={{
             color: 'rgba(255,255,255,0.35)', cursor: 'pointer', display: 'flex', padding: 4,
-            transition: 'color 0.15s',
+            transition: 'color 0.15s', borderRadius: 6,
           }}
-            onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.7)'}
+            onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.8)'}
             onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.35)'}
           >
             <LogOut size={14} />
@@ -182,6 +194,7 @@ export default function DashboardLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [humanSessionCount, setHumanSessionCount] = useState(0);
   const mode = user?.businessMode || 'RESTAURANT';
   const modeConfig = getModeConfig(mode);
   const hasBookings = needsBookings(mode);
@@ -206,9 +219,27 @@ export default function DashboardLayout() {
     return () => { document.body.style.overflow = ''; };
   }, [sidebarOpen]);
 
+  // [FIX-LAYOUT-POLL] Poll for human sessions in background so sidebar badge stays current
+  useEffect(() => {
+    const poll = () => {
+      // Lazy import to avoid circular dep
+      import('../api.js').then(({ dashApi }) => {
+        dashApi.conversations(100)
+          .then(r => {
+            const humanCount = (r.data.conversations || []).filter(s => s.humanMode).length;
+            setHumanSessionCount(humanCount);
+          })
+          .catch(() => {});
+      });
+    };
+    poll();
+    const t = setInterval(poll, 45000);
+    return () => clearInterval(t);
+  }, []);
+
   const handleLogout = () => { logout(); navigate('/login'); toast.success('Signed out'); };
 
-  const sidebarProps = { user, modeConfig, hasBookings, hasMenu, hasServices, onLogout: handleLogout };
+  const sidebarProps = { user, modeConfig, hasBookings, hasMenu, hasServices, onLogout: handleLogout, humanSessionCount };
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-page)' }}>
@@ -250,15 +281,23 @@ export default function DashboardLayout() {
             style={{
               color: 'var(--text-secondary)', display: 'flex', cursor: 'pointer',
               padding: 8, borderRadius: 8, background: 'var(--bg-overlay)',
+              position: 'relative',
             }}
           >
             <Menu size={20} />
+            {humanSessionCount > 0 && (
+              <span style={{
+                position: 'absolute', top: 2, right: 2,
+                width: 8, height: 8, borderRadius: '50%',
+                background: 'var(--amber)', border: '1.5px solid var(--bg-surface)',
+              }} />
+            )}
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Logo size={26} />
             <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>WhatSales</span>
           </div>
-          <WaPill whatsapp={user?.whatsapp} />
+          <WaPill whatsapp={user?.whatsapp} status={user?.status} />
         </header>
 
         {/* Page content */}

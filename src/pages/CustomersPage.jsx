@@ -1,54 +1,84 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Users, RefreshCw, Search, ShoppingBag } from 'lucide-react';
+import { Users, RefreshCw, ShoppingBag, Phone } from 'lucide-react';
 import { dashApi } from '../api.js';
-import { PageHeader, Card, Btn, EmptyState, Spinner } from '../components/ui.jsx';
+import { PageHeader, Card, Btn, EmptyState, Spinner, Avatar, SearchInput, Pagination } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
 function CustomerCard({ customer }) {
   const name  = customer.name  || customer.customerName  || 'Customer';
   const phone = customer.phone || customer.customerPhone || '—';
-  const initials = name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
-
-  // Deterministic color from name
-  const colors = ['var(--primary)', 'var(--blue)', 'var(--purple)', 'var(--teal)', 'var(--amber)'];
-  const colorIndex = name.charCodeAt(0) % colors.length;
+  const [expanded, setExpanded] = useState(false);
 
   return (
-    <div style={{
-      background: 'var(--bg-surface)', border: '1.5px solid var(--border)',
-      borderRadius: 'var(--r-lg)', padding: '14px 18px',
-      display: 'flex', alignItems: 'center', gap: 14,
-      transition: 'box-shadow 0.15s, transform 0.15s',
-      boxShadow: 'var(--sh-xs)',
-    }}
-      onMouseEnter={e => { e.currentTarget.style.boxShadow = 'var(--sh-md)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'var(--sh-xs)'; e.currentTarget.style.transform = ''; }}
+    <div
+      className="hover-lift"
+      style={{
+        background: 'var(--bg-surface)', border: '1.5px solid var(--border)',
+        borderRadius: 'var(--r-lg)', overflow: 'hidden',
+        boxShadow: 'var(--sh-xs)',
+      }}
     >
-      <div style={{
-        width: 42, height: 42, borderRadius: '50%', flexShrink: 0,
-        background: colors[colorIndex] + '18',
-        border: `2px solid ${colors[colorIndex]}30`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontWeight: 800, color: colors[colorIndex], fontSize: '0.85rem',
-      }}>
-        {initials || '?'}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 2, letterSpacing: '-0.01em' }}>{name}</div>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--text-muted)' }}>{phone}</div>
-      </div>
-      <div style={{ textAlign: 'right', flexShrink: 0 }}>
-        {customer.totalOrders != null && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700 }}>
-            <ShoppingBag size={12} color="var(--text-muted)" />{customer.totalOrders} orders
+      <button
+        onClick={() => setExpanded(v => !v)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px',
+          width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
+        }}
+      >
+        <Avatar name={name} size={42} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 2, letterSpacing: '-0.01em' }}>{name}</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Phone size={10} />{phone}
           </div>
-        )}
-        {customer.updatedAt && (
-          <div style={{ fontSize: '0.71rem', color: 'var(--text-ghost)', marginTop: 2 }}>
-            {new Date(customer.updatedAt).toLocaleDateString()}
+        </div>
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          {customer.totalOrders != null && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700, justifyContent: 'flex-end' }}>
+              <ShoppingBag size={12} color="var(--text-muted)" />{customer.totalOrders}
+            </div>
+          )}
+          {customer.updatedAt && (
+            <div style={{ fontSize: '0.71rem', color: 'var(--text-ghost)', marginTop: 2 }}>
+              {new Date(customer.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+            </div>
+          )}
+        </div>
+      </button>
+      {expanded && (
+        <div style={{ borderTop: '1.5px solid var(--border)', padding: '12px 18px', background: 'var(--bg-page)', animation: 'fadeIn 0.14s ease' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
+            {customer.totalOrders != null && (
+              <div>
+                <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Orders</div>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{customer.totalOrders}</div>
+              </div>
+            )}
+            {customer.totalSpent != null && (
+              <div>
+                <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Total Spent</div>
+                <div style={{ fontWeight: 700, color: 'var(--primary)' }}>D {Number(customer.totalSpent).toFixed(0)}</div>
+              </div>
+            )}
+            {customer.createdAt && (
+              <div>
+                <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>First Seen</div>
+                <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)' }}>
+                  {new Date(customer.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </div>
+              </div>
+            )}
+            {customer.lastOrderDate && (
+              <div>
+                <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Last Order</div>
+                <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)' }}>
+                  {new Date(customer.lastOrderDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -59,11 +89,11 @@ export default function CustomersPage() {
   const [total, setTotal]         = useState(0);
   const [page, setPage]           = useState(1);
   const [search, setSearch]       = useState('');
-  const [searchFocused, setSearchFocused] = useState(false);
+  const LIMIT = 30;
 
   const load = useCallback(() => {
     setLoading(true);
-    dashApi.customers({ page, limit: 30 })
+    dashApi.customers({ page, limit: LIMIT })
       .then(r => { setCustomers(r.data.customers || []); setTotal(r.data.total || 0); })
       .catch(err => toast.error(err.message))
       .finally(() => setLoading(false));
@@ -71,6 +101,7 @@ export default function CustomersPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Client-side filter while user types (no extra API call)
   const filtered = search
     ? customers.filter(c => {
         const q = search.toLowerCase();
@@ -85,30 +116,18 @@ export default function CustomersPage() {
         actions={<Btn variant="ghost" size="sm" onClick={load}><RefreshCw size={14} /> Refresh</Btn>}
       />
 
-      {/* Search */}
-      <div style={{ position: 'relative', marginBottom: 16 }}>
-        <Search size={15} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: searchFocused ? 'var(--primary)' : 'var(--text-muted)', pointerEvents: 'none', transition: 'color 0.15s' }} />
-        <input
-          value={search} onChange={e => setSearch(e.target.value)}
-          onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)}
-          placeholder="Search by name or phone…"
-          style={{
-            width: '100%', padding: '11px 13px 11px 40px',
-            border: `1.5px solid ${searchFocused ? 'var(--primary)' : 'var(--border-mid)'}`,
-            borderRadius: 'var(--r-lg)', fontFamily: 'var(--font-body)', fontSize: '0.875rem',
-            background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none',
-            transition: 'border-color 0.15s, box-shadow 0.15s',
-            boxShadow: searchFocused ? '0 0 0 3px var(--primary-dim)' : 'none',
-            boxSizing: 'border-box',
-          }}
-        />
-        {search && (
-          <button onClick={() => setSearch('')} style={{
-            position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-            color: 'var(--text-muted)', cursor: 'pointer', display: 'flex',
-          }}>✕</button>
-        )}
-      </div>
+      <SearchInput
+        value={search}
+        onChange={v => { setSearch(v); setPage(1); }}
+        placeholder="Search by name or phone…"
+        style={{ marginBottom: 16 }}
+      />
+
+      {search && !loading && (
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 10 }}>
+          {filtered.length} result{filtered.length !== 1 ? 's' : ''} for "{search}"
+        </p>
+      )}
 
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}><Spinner size={28} /></div>
@@ -120,21 +139,10 @@ export default function CustomersPage() {
         </Card>
       ) : (
         <>
-          {search && (
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 10 }}>
-              {filtered.length} result{filtered.length !== 1 ? 's' : ''} for "{search}"
-            </p>
-          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} className="stagger">
             {filtered.map((c, i) => <CustomerCard key={c._id || i} customer={c} />)}
           </div>
-          {total > 30 && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 18 }}>
-              <Btn variant="ghost" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Previous</Btn>
-              <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', padding: '6px 12px', background: 'var(--bg-overlay)', borderRadius: 'var(--r-md)' }}>Page {page}</span>
-              <Btn variant="ghost" size="sm" disabled={customers.length < 30} onClick={() => setPage(p => p + 1)}>Next →</Btn>
-            </div>
-          )}
+          {!search && <Pagination page={page} total={total} limit={LIMIT} onChange={setPage} />}
         </>
       )}
     </div>

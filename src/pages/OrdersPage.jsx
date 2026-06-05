@@ -1,15 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
-import { ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Clock, Package, DollarSign } from 'lucide-react';
 import { dashApi } from '../api.js';
-import { PageHeader, Card, StatusBadge, Btn, EmptyState, Spinner, Select } from '../components/ui.jsx';
+import { PageHeader, Card, StatusBadge, Btn, EmptyState, Spinner, Select, FilterBar, InlineSelect, Pagination } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
 const STATUS_OPTIONS = ['pending','confirmed','completed','cancelled','payment_failed','rejected'];
-
-const STATUS_COLORS = {
-  pending: 'amber', confirmed: 'green', completed: 'blue',
-  cancelled: 'red', payment_failed: 'red', rejected: 'red',
-};
 
 function OrderRow({ order, onUpdate }) {
   const [expanded, setExpanded] = useState(false);
@@ -28,25 +23,39 @@ function OrderRow({ order, onUpdate }) {
     finally { setSaving(false); }
   };
 
+  const isNew = order.status === 'pending';
+
   return (
     <div style={{
-      background: 'var(--bg-surface)', border: '1.5px solid var(--border)',
+      background: 'var(--bg-surface)', border: `1.5px solid ${isNew ? 'rgba(10,122,60,0.22)' : 'var(--border)'}`,
       borderRadius: 'var(--r-lg)', marginBottom: 8, overflow: 'hidden',
       transition: 'box-shadow 0.15s',
-      boxShadow: expanded ? 'var(--sh-md)' : 'var(--sh-xs)',
+      boxShadow: expanded ? 'var(--sh-md)' : (isNew ? '0 0 0 3px var(--primary-dim)' : 'var(--sh-xs)'),
     }}>
       <button onClick={() => setExpanded(v => !v)} style={{
         display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px',
         cursor: 'pointer', width: '100%', textAlign: 'left', background: 'none', border: 'none',
       }}>
+        {/* Item icon */}
+        <div style={{
+          width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+          background: isNew ? 'var(--primary-dim)' : 'var(--bg-overlay)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: `1.5px solid ${isNew ? 'var(--border-accent)' : 'var(--border)'}`,
+        }}>
+          <Package size={16} color={isNew ? 'var(--primary)' : 'var(--text-muted)'} />
+        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 3, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {order.item} × {order.quantity}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{order.customerPhone}</span>
+            {order.customerName && (
+              <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{order.customerName}</span>
+            )}
             <span style={{ fontSize: '0.72rem', color: 'var(--text-ghost)', display: 'flex', alignItems: 'center', gap: 3 }}>
-              <Clock size={10} />{new Date(order.createdAt).toLocaleDateString()}
+              <Clock size={10} />{new Date(order.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </span>
           </div>
         </div>
@@ -63,21 +72,27 @@ function OrderRow({ order, onUpdate }) {
 
       {expanded && (
         <div style={{ borderTop: '1.5px solid var(--border)', padding: '16px 18px', background: 'var(--bg-page)', animation: 'fadeIn 0.15s ease' }}>
-          {order.addOns?.length > 0 && (
-            <div style={{ marginBottom: 10, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-              <span style={{ fontWeight: 700 }}>Add-ons: </span>{order.addOns.join(', ')}
-            </div>
-          )}
-          {order.notes && (
-            <div style={{ marginBottom: 10, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-              <span style={{ fontWeight: 700 }}>Notes: </span>{order.notes}
-            </div>
-          )}
-          {order.paymentMethod && (
-            <div style={{ marginBottom: 12, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-              <span style={{ fontWeight: 700 }}>Payment: </span>{order.paymentMethod} — {order.paymentStatus}
-            </div>
-          )}
+          {/* Order details */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 14 }}>
+            {order.addOns?.length > 0 && (
+              <div>
+                <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Add-ons</div>
+                <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)' }}>{order.addOns.join(', ')}</div>
+              </div>
+            )}
+            {order.notes && (
+              <div>
+                <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Notes</div>
+                <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)' }}>{order.notes}</div>
+              </div>
+            )}
+            {order.paymentMethod && (
+              <div>
+                <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Payment</div>
+                <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)' }}>{order.paymentMethod} — {order.paymentStatus}</div>
+              </div>
+            )}
+          </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <div style={{ minWidth: 150 }}>
               <Select label="Update status" value={newStatus} onChange={e => setNewStatus(e.target.value)}>
@@ -89,7 +104,12 @@ function OrderRow({ order, onUpdate }) {
               <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Add a note..."
                 style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.875rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none' }} />
             </div>
-            <Btn onClick={handleUpdate} loading={saving} size="sm">Save</Btn>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {newStatus !== order.status && (
+                <Btn onClick={handleUpdate} loading={saving} size="sm">Save</Btn>
+              )}
+              <Btn variant="ghost" size="sm" onClick={() => setExpanded(false)}>Close</Btn>
+            </div>
           </div>
         </div>
       )}
@@ -103,10 +123,11 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const LIMIT = 20;
 
   const load = useCallback(() => {
     setLoading(true);
-    dashApi.orders({ status: statusFilter || undefined, page, limit: 20 })
+    dashApi.orders({ status: statusFilter || undefined, page, limit: LIMIT })
       .then(r => { setOrders(r.data.orders || []); setTotal(r.data.total || 0); })
       .catch(err => toast.error(err.message))
       .finally(() => setLoading(false));
@@ -114,29 +135,43 @@ export default function OrdersPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Summary counts from loaded page
+  const pendingCount = orders.filter(o => o.status === 'pending').length;
+  const revenue = orders.filter(o => ['confirmed','completed'].includes(o.status)).reduce((s, o) => s + (o.totalPrice || 0), 0);
+
   return (
     <div className="fade-in">
       <PageHeader
         icon={ShoppingCart} title="Orders"
         subtitle={`${total} total orders`}
-        actions={
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
-              style={{
-                padding: '8px 30px 8px 12px', border: '1.5px solid var(--border-mid)',
-                borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.815rem',
-                background: 'var(--bg-surface)', cursor: 'pointer', outline: 'none',
-                appearance: 'none',
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23627065' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
-              }}>
-              <option value="">All statuses</option>
-              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <Btn variant="ghost" size="sm" onClick={load}><RefreshCw size={14} /> Refresh</Btn>
-          </div>
-        }
+        actions={<Btn variant="ghost" size="sm" onClick={load}><RefreshCw size={14} /> Refresh</Btn>}
       />
+
+      {/* Summary strip */}
+      {!loading && orders.length > 0 && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: 'var(--primary-dim)', border: '1.5px solid var(--border-accent)', borderRadius: 'var(--r-md)', fontSize: '0.815rem', fontWeight: 600, color: 'var(--primary)' }}>
+            <Package size={13} /> {orders.length} on this page
+          </div>
+          {pendingCount > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: 'var(--amber-dim)', border: '1.5px solid rgba(217,119,6,0.22)', borderRadius: 'var(--r-md)', fontSize: '0.815rem', fontWeight: 600, color: 'var(--amber)' }}>
+              ⚡ {pendingCount} pending action
+            </div>
+          )}
+          {revenue > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: 'var(--bg-overlay)', border: '1.5px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '0.815rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              <DollarSign size={13} /> D {revenue.toFixed(0)} visible
+            </div>
+          )}
+        </div>
+      )}
+
+      <FilterBar>
+        <InlineSelect value={statusFilter} onChange={v => { setStatusFilter(v); setPage(1); }}>
+          <option value="">All statuses</option>
+          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+        </InlineSelect>
+      </FilterBar>
 
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}><Spinner size={28} /></div>
@@ -152,13 +187,7 @@ export default function OrdersPage() {
               <OrderRow key={o._id} order={o} onUpdate={u => setOrders(os => os.map(x => x._id === u._id ? u : x))} />
             ))}
           </div>
-          {total > 20 && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 18 }}>
-              <Btn variant="ghost" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Previous</Btn>
-              <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', padding: '6px 12px', background: 'var(--bg-overlay)', borderRadius: 'var(--r-md)' }}>Page {page}</span>
-              <Btn variant="ghost" size="sm" disabled={orders.length < 20} onClick={() => setPage(p => p + 1)}>Next →</Btn>
-            </div>
-          )}
+          <Pagination page={page} total={total} limit={LIMIT} onChange={setPage} />
         </>
       )}
     </div>
