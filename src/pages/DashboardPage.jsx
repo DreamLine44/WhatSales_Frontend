@@ -104,19 +104,19 @@ export default function DashboardPage() {
   const modeConfig = getModeConfig(mode);
   const hasBookings = needsBookings(mode);
 
-  const load = useCallback(() => {
-    setLoading(true);
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
     dashApi.overview()
       .then(r => setOverview(r.data))
-      .catch(err => toast.error(err.message || 'Failed to load dashboard'))
-      .finally(() => setLoading(false));
+      .catch(err => { if (!silent) toast.error(err.message || 'Failed to load dashboard'); })
+      .finally(() => { if (!silent) setLoading(false); });
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-refresh dashboard every 60s
+  // Auto-refresh dashboard every 60s — silently so no skeleton flash
   useEffect(() => {
-    const t = setInterval(load, 60000);
+    const t = setInterval(() => load(true), 60000);
     return () => clearInterval(t);
   }, [load]);
 

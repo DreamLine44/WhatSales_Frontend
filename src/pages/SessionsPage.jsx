@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { MessageSquare, RefreshCw, Bot, User, AlertTriangle, Clock, Zap } from 'lucide-react';
-import { dashApi } from '../api.js';
+import { sessionsApi } from '../api.js';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Badge } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
@@ -21,7 +21,8 @@ function SessionCard({ session, onToggle }) {
   const toggle = async () => {
     setToggling(true);
     try {
-      await dashApi.setHumanMode(session.customerPhone, !isHuman);
+      // Toggle human mode — dashboard-level route
+      await sessionsApi.setHumanMode(session.customerPhone, !isHuman);
       onToggle(session.customerPhone, !isHuman);
       toast.success(isHuman ? 'Bot resumed — AI will handle replies' : 'Human mode — bot paused');
     } catch (err) { toast.error(err.message); }
@@ -46,10 +47,7 @@ function SessionCard({ session, onToggle }) {
         border: `2px solid ${isHuman ? 'rgba(217,119,6,0.35)' : 'var(--border-accent)'}`,
         position: 'relative',
       }}>
-        {isHuman
-          ? <User size={20} color="var(--amber)" />
-          : <Bot size={20} color="var(--primary)" />}
-        {/* Live dot */}
+        {isHuman ? <User size={20} color="var(--amber)" /> : <Bot size={20} color="var(--primary)" />}
         {session.lastSeen && (Date.now() - new Date(session.lastSeen)) < 300000 && (
           <span style={{
             position: 'absolute', bottom: 1, right: 1,
@@ -107,27 +105,29 @@ export default function SessionsPage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    dashApi.conversations(100)
-      .then(r => setSessions(r.data.conversations || []))
+    // Step 11: GET /admin/sessions/:tenantId — uses TENANT API KEY
+    // Supports ?limit, ?page, ?humanOnly
+    sessionsApi.list({ limit: 100 })
+      .then(r => setSessions(r.data.sessions || r.data.conversations || []))
       .catch(err => toast.error(err.message))
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  // [FIX-SESSIONS-POLL] Auto-refresh every 30s so human-mode alerts stay fresh
+  // Auto-refresh every 30s so human-mode alerts stay fresh (silent refresh - no loading state)
   useEffect(() => {
     pollRef.current = setInterval(() => {
-      dashApi.conversations(100)
-        .then(r => setSessions(r.data.conversations || []))
+      sessionsApi.list({ limit: 100 })
+        .then(r => setSessions(r.data.sessions || r.data.conversations || []))
         .catch(() => {});
     }, 30000);
     return () => clearInterval(pollRef.current);
   }, []);
 
-  const displayed  = humanOnly ? sessions.filter(s => s.humanMode) : sessions;
-  const humanCount = sessions.filter(s => s.humanMode).length;
-  const botCount   = sessions.filter(s => !s.humanMode).length;
+  const displayed   = humanOnly ? sessions.filter(s => s.humanMode) : sessions;
+  const humanCount  = sessions.filter(s => s.humanMode).length;
+  const botCount    = sessions.filter(s => !s.humanMode).length;
   const activeCount = sessions.filter(s => s.lastSeen && (Date.now() - new Date(s.lastSeen)) < 300000).length;
 
   const handleToggle = (phone, humanMode) => {
@@ -150,7 +150,6 @@ export default function SessionsPage() {
         }
       />
 
-      {/* Stats strip */}
       {sessions.length > 0 && (
         <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 13px', background: 'var(--primary-dim)', border: '1.5px solid var(--border-accent)', borderRadius: 'var(--r-md)', fontSize: '0.8rem', fontWeight: 600, color: 'var(--primary)' }}>

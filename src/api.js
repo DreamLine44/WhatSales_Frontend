@@ -15,6 +15,7 @@ function getAdminApiKey() {
 }
 
 // ── Axios instances ───────────────────────────────────────────────────────────
+// Tenant API key (Steps 3–6, 8–12 in Bruno spec)
 const http = axios.create({ baseURL: BASE_URL, timeout: 15000 });
 http.interceptors.request.use(cfg => {
   const key = getApiKey();
@@ -22,6 +23,7 @@ http.interceptors.request.use(cfg => {
   return cfg;
 });
 
+// Super admin API key (Steps 1, 2, 7 in Bruno spec)
 const adminHttp = axios.create({ baseURL: BASE_URL, timeout: 15000 });
 adminHttp.interceptors.request.use(cfg => {
   const key = getAdminApiKey();
@@ -38,9 +40,9 @@ http.interceptors.response.use(r => r, errorInterceptor);
 adminHttp.interceptors.response.use(r => r, errorInterceptor);
 
 // ── Auth (tenant login) ───────────────────────────────────────────────────────
+// Uses GET /business/:tenantId — authenticated with TENANT API KEY
+// Returns { business, tenant } — used for both initial login and session restore.
 export const authApi = {
-  // Returns { business, tenant } from GET /business/:tenantId.
-  // Used for both initial login and session restore.
   getTenantInfo: async (tenantId, apiKey) => {
     const res = await axios.get(`${BASE_URL}/business/${tenantId}`, {
       headers: { 'x-api-key': apiKey },
@@ -52,112 +54,94 @@ export const authApi = {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export const dashApi = {
-  overview:       () => http.get(`/dashboard/${getTenantId()}/overview`),
-  orders:         (p = {}) => http.get(`/dashboard/${getTenantId()}/orders`, { params: p }),
-  updateOrder:    (orderId, body) => http.patch(`/dashboard/${getTenantId()}/orders/${orderId}/status`, body),
-  bookings:       (p = {}) => http.get(`/dashboard/${getTenantId()}/bookings`, { params: p }),
-  updateBooking:  (bookingId, body) => http.patch(`/dashboard/${getTenantId()}/bookings/${bookingId}/status`, body),
-  analytics:      (days = 30) => http.get(`/dashboard/${getTenantId()}/analytics`, { params: { days } }),
-  conversations:  (limit = 50) => http.get(`/dashboard/${getTenantId()}/conversations`, { params: { limit } }),
-  setHumanMode:   (phone, humanMode) => http.patch(`/dashboard/${getTenantId()}/conversations/${encodeURIComponent(phone)}/human`, { humanMode }),
-  customers:      (p = {}) => http.get(`/dashboard/${getTenantId()}/customers`, { params: p }),
-  settings:       () => http.get(`/dashboard/${getTenantId()}/settings`),
-  updateSettings: (body) => http.patch(`/dashboard/${getTenantId()}/settings`, body),
+  overview:      () => http.get(`/dashboard/${getTenantId()}/overview`),
+  orders:        (p = {}) => http.get(`/dashboard/${getTenantId()}/orders`, { params: p }),
+  bookings:      (p = {}) => http.get(`/dashboard/${getTenantId()}/bookings`, { params: p }),
+  analytics:     (days = 30) => http.get(`/dashboard/${getTenantId()}/analytics`, { params: { days } }),
+  customers:     (p = {}) => http.get(`/dashboard/${getTenantId()}/customers`, { params: p }),
 };
 
-// ── Business (menu / services / FAQs) ────────────────────────────────────────
+// ── Business config (Step 3 spec: PUT /business/:id) ─────────────────────────
+// All business settings — name, description, hours, payment, addOns, leadCapture, faq —
+// live in a single PUT /business/:id call per the spec.
+// Individual field groups are patched by sending only the relevant top-level keys.
 export const bizApi = {
-  get:    () => http.get(`/business/${getTenantId()}`),
+  // Step 6: GET /business/:id — full business config
+  get: () => http.get(`/business/${getTenantId()}`),
+
+  // Step 3: PUT /business/:id — full or partial config update
+  // Pass only the keys you want to update; backend merges them.
   update: (body) => http.put(`/business/${getTenantId()}`, body),
 
-  // Menu
-  getMenu:        () => http.get(`/dashboard/${getTenantId()}/menu`),
-  addMenuItem:    (fd) => http.post(`/dashboard/${getTenantId()}/menu`, fd),
-  updateMenuItem: (id, fd) => http.patch(`/dashboard/${getTenantId()}/menu/${id}`, fd),
-  deleteMenuItem: (id) => http.delete(`/dashboard/${getTenantId()}/menu/${id}`),
+  // ── Menu (Step 4 / 5 / 8 / 12 in spec) ──────────────────────────────────
+  // Step 5:  GET  /business/:id/menu          — verify menu
+  // Step 4:  PUT  /business/:id/menu          — replace entire menu
+  // Step 8:  POST /business/:id/menu          — add single item
+  // Step 12: DELETE /business/:id/menu/:itemId — delete one item
+  // NOTE: There is no PATCH /business/:id/menu/:id in the spec.
+  //       To update a single item, POST to add it or replace the whole menu with PUT.
+  getMenu:     () => http.get(`/business/${getTenantId()}/menu`),
+  replaceMenu: (menuItems) => http.put(`/business/${getTenantId()}/menu`, { menuItems }),
+  addMenuItem: (body) => http.post(`/business/${getTenantId()}/menu`, body),
+  deleteMenuItem: (id) => http.delete(`/business/${getTenantId()}/menu/${id}`),
+};
 
-  // Services
-  getServices:   () => http.get(`/dashboard/${getTenantId()}/services`),
-  addService:    (body) => http.post(`/dashboard/${getTenantId()}/services`, body),
-  updateService: (id, body) => http.patch(`/dashboard/${getTenantId()}/services/${id}`, body),
-  deleteService: (id) => http.delete(`/dashboard/${getTenantId()}/services/${id}`),
+// ── Order & Booking status updates ───────────────────────────────────────────
+// Step 9:  PATCH /admin/orders/:orderId/status   — uses TENANT API KEY (x-api-key)
+// Step 10: PATCH /admin/bookings/:bookingId/status — uses TENANT API KEY (x-api-key)
+// Valid order statuses:   pending | confirmed | completed | cancelled | payment_failed | rejected
+// Valid booking statuses: pending | confirmed | completed | cancelled
+// Customers receive WhatsApp notifications on: confirmed, completed, cancelled, rejected
+export const orderApi = {
+  updateStatus: (orderId, body) => http.patch(`/admin/orders/${orderId}/status`, body),
+};
 
-  // FAQs
-  getFaqs:    () => http.get(`/dashboard/${getTenantId()}/faqs`),
-  addFaq:     (body) => http.post(`/dashboard/${getTenantId()}/faqs`, body),
-  updateFaq:  (id, body) => http.patch(`/dashboard/${getTenantId()}/faqs/${id}`, body),
-  deleteFaq:  (id) => http.delete(`/dashboard/${getTenantId()}/faqs/${id}`),
+export const bookingApi = {
+  updateStatus: (bookingId, body) => http.patch(`/admin/bookings/${bookingId}/status`, body),
+};
+
+// ── Sessions (Step 11 in spec) ────────────────────────────────────────────────
+// Step 11: GET /admin/sessions/:tenantId — uses TENANT API KEY
+// Supports: ?limit=50 (max 200, default 50), ?page=1, ?humanOnly=true
+export const sessionsApi = {
+  list: (p = {}) => http.get(`/admin/sessions/${getTenantId()}`, { params: p }),
+  // Human mode toggle is a dashboard-level concern — route kept from existing impl
+  setHumanMode: (phone, humanMode) =>
+    http.patch(`/dashboard/${getTenantId()}/conversations/${encodeURIComponent(phone)}/human`, { humanMode }),
 };
 
 // ── Super Admin ───────────────────────────────────────────────────────────────
+// All /admin/tenants routes use the SUPER ADMIN API KEY
 export const adminApi = {
-  // Tenant CRUD
-  listTenants:  (p = {}) => adminHttp.get('/admin/tenants', { params: p }),
-  getTenant:    (id) => adminHttp.get(`/admin/tenants/${id}`),
+  // Step 1: POST /admin/tenants — create tenant (status starts PENDING)
+  // Returns: { tenant: { _id, name, status, apiKey }, business: { ... } }
+  // apiKey is returned ONCE ONLY — hash stored in DB, plaintext unrecoverable after this.
   createTenant: (body) => adminHttp.post('/admin/tenants', body),
 
-  // PATCH /admin/tenants/:id — update business info, plan, email, whatsapp credentials
-  // The backend merges only the fields provided.
-  updateTenant: (id, body) => adminHttp.patch(`/admin/tenants/${id}`, body),
-
-  // PATCH /admin/tenants/:id/status { status }
-  // The ONLY correct way to activate / deactivate / suspend a tenant.
-  // Using updateTenant to change status would bypass any server-side status transition guards.
+  // Step 2: PATCH /admin/tenants/:id/status — activate/deactivate/suspend
+  // Body: { status: "ACTIVE" | "SUSPENDED" | "INACTIVE" | "PENDING" }
+  // Bot only processes messages when status = ACTIVE and phoneNumberId is set.
   updateStatus: (id, status) => adminHttp.patch(`/admin/tenants/${id}/status`, { status }),
 
+  // Step 7: PATCH /admin/tenants/:id — connect real WhatsApp credentials
+  // Also used for general tenant field updates (name, email, businessMode, plan, etc.)
+  // Backend merges only the fields provided.
+  // After saving whatsapp creds, call configureWhatsApp() to re-initialise the bot.
+  updateTenant: (id, body) => adminHttp.patch(`/admin/tenants/${id}`, body),
+
+  listTenants:  (p = {}) => adminHttp.get('/admin/tenants', { params: p }),
+  getTenant:    (id) => adminHttp.get(`/admin/tenants/${id}`),
   deleteTenant: (id) => adminHttp.delete(`/admin/tenants/${id}`),
 
-  // POST /admin/tenants/:id/regen-key  (fallback: /regenerate-key or /reset-key)
+  // POST /admin/tenants/:id/regen-key
   // Returns { apiKey: '<plain-text>' } — the plain key is shown once, then hashed.
-  regenApiKey: async (id) => {
-    // Try the primary endpoint first, fall back to alternatives if 404
-    const endpoints = [
-      `/admin/tenants/${id}/regen-key`,
-      `/admin/tenants/${id}/regenerate-key`,
-      `/admin/tenants/${id}/reset-key`,
-    ];
-    let lastErr;
-    for (const ep of endpoints) {
-      try {
-        const res = await adminHttp.post(ep);
-        return res;
-      } catch (err) {
-        if (err.response?.status !== 404) throw err; // non-404 error — surface it
-        lastErr = err;
-      }
-    }
-    throw lastErr; // all 404s — throw the last one
-  },
-
-  // Admin sessions (per-tenant conversation list)
-  getSessions: (tenantId, p = {}) => adminHttp.get(`/admin/sessions/${tenantId}`, { params: p }),
-
-  // Order/booking status updates via admin routes (not tenant dashboard routes)
-  updateOrderStatus:   (id, body) => adminHttp.patch(`/admin/orders/${id}/status`, body),
-  updateBookingStatus: (id, body) => adminHttp.patch(`/admin/bookings/${id}/status`, body),
+  regenApiKey: (id) => adminHttp.post(`/admin/tenants/${id}/regen-key`),
 
   // POST /admin/tenants/:id/whatsapp/configure
-  // Explicitly triggers the backend to re-initialise the WhatsApp client for a tenant
-  // after credentials have been saved. Call this after saveWA to ensure the bot is live.
-  // Tries multiple common endpoint patterns gracefully.
-  configureWhatsApp: async (id) => {
-    const endpoints = [
-      `/admin/tenants/${id}/whatsapp/configure`,
-      `/admin/tenants/${id}/configure-whatsapp`,
-      `/admin/tenants/${id}/whatsapp/init`,
-      `/admin/tenants/${id}/whatsapp/connect`,
-    ];
-    for (const ep of endpoints) {
-      try {
-        const res = await adminHttp.post(ep);
-        return res;
-      } catch (err) {
-        if (err.response?.status !== 404) throw err;
-      }
-    }
-    // All endpoints 404 — not fatal, backend may auto-initialise on next message
-    return null;
-  },
+  // Triggers backend to re-initialise the WhatsApp client after credentials are saved.
+  // Call this after saveWA to ensure the bot goes live without a server restart.
+  // Errors here are non-fatal (warn only).
+  configureWhatsApp: (id) => adminHttp.post(`/admin/tenants/${id}/whatsapp/configure`),
 };
 
 // ── Admin session storage ─────────────────────────────────────────────────────

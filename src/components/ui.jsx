@@ -45,7 +45,7 @@ export function Btn({ children, variant = 'primary', size = 'md', loading = fals
     outline: { background: 'transparent', color: 'var(--primary)', border: '1.5px solid var(--primary)' },
   };
   return (
-    <button style={{ ...base, ...sizes[size], ...variants[variant], ...style }} {...props}>
+    <button type={props.type || 'button'} disabled={loading || props.disabled} style={{ ...base, ...sizes[size], ...variants[variant], ...style }} {...props}>
       {loading && <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />}
       {children}
     </button>
@@ -236,7 +236,8 @@ export function Card({ children, style = {}, pad = true, hover = false, ...props
     <div
       style={{
         background: 'var(--bg-surface)', border: '1.5px solid var(--border)',
-        borderRadius: 'var(--r-lg)', boxShadow: hover && hovered ? 'var(--sh-md)' : 'var(--sh-sm)',
+        borderRadius: 'var(--r-lg)',
+        boxShadow: hover && hovered ? 'var(--sh-md)' : 'var(--sh-xs)',
         padding: pad ? '20px 22px' : 0,
         transform: hover && hovered ? 'translateY(-1px)' : 'none',
         transition: hover ? 'box-shadow 0.15s, transform 0.15s' : 'none',
@@ -297,36 +298,55 @@ export function StatusBadge({ status, style }) {
 }
 
 // ── Page header ───────────────────────────────────────────────────────────────
+// Fully responsive: never clips or hides actions on small screens.
+// Title + icon row always on one line; actions wrap to next row on mobile.
 export function PageHeader({ title, subtitle, actions, icon: Icon, back }) {
   return (
     <div style={{ marginBottom: 24 }}>
+      {/* Outer: row on desktop, column on very small screens */}
       <div style={{
-        display: 'flex', alignItems: 'flex-start',
-        justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        gap: 10,
+        flexWrap: 'wrap',
+        rowGap: 10,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+        {/* Left: icon + title/subtitle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0, flex: '1 1 0' }}>
           {Icon && (
             <div style={{
-              width: 40, height: 40, borderRadius: 'var(--r-md)',
+              width: 38, height: 38, borderRadius: 'var(--r-md)',
               background: 'var(--primary-dim)', border: '1.5px solid var(--border-accent)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
             }}>
-              <Icon size={20} color="var(--primary)" />
+              <Icon size={18} color="var(--primary)" />
             </div>
           )}
           <div style={{ minWidth: 0 }}>
             <h1 style={{
-              fontFamily: 'var(--font-display)', fontSize: 'clamp(1.2rem, 3vw, 1.45rem)',
+              fontFamily: 'var(--font-display)', fontSize: 'clamp(1.1rem, 2.8vw, 1.42rem)',
               fontWeight: 800, color: 'var(--text-primary)',
               letterSpacing: '-0.03em', lineHeight: 1.2,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>{title}</h1>
             {subtitle && (
-              <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', marginTop: 3 }}>{subtitle}</p>
+              <p style={{
+                fontSize: '0.81rem', color: 'var(--text-muted)', marginTop: 2,
+                lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                maxWidth: '100%',
+              }}>{subtitle}</p>
             )}
           </div>
         </div>
+
+        {/* Right: actions — always fully visible, wraps naturally */}
         {actions && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex', gap: 7, alignItems: 'center',
+            flexWrap: 'wrap',
+            flexShrink: 0,
+          }}>
             {actions}
           </div>
         )}
@@ -360,13 +380,13 @@ export function EmptyState({ icon: Icon, title, description, action }) {
 // ── Stat card ─────────────────────────────────────────────────────────────────
 export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend, trendLabel }) {
   const colors = {
-    green:  { icon: '#dcfce7',  text: '#15803d' },
-    amber:  { icon: '#fef3c7',  text: '#b45309' },
-    blue:   { icon: '#dbeafe',  text: '#1d4ed8' },
-    purple: { icon: '#ede9fe',  text: '#7c3aed' },
-    red:    { icon: '#fee2e2',  text: '#dc2626' },
-    teal:   { icon: '#ccfbf1',  text: '#0f766e' },
-    gray:   { icon: 'var(--bg-overlay)', text: 'var(--text-muted)' },
+    green:  { icon: 'rgba(21,128,61,0.1)',  text: '#15803d', border: 'rgba(21,128,61,0.18)' },
+    amber:  { icon: 'rgba(180,83,9,0.1)',   text: '#b45309', border: 'rgba(180,83,9,0.18)' },
+    blue:   { icon: 'rgba(29,78,216,0.1)',  text: '#1d4ed8', border: 'rgba(29,78,216,0.18)' },
+    purple: { icon: 'rgba(124,58,237,0.1)', text: '#7c3aed', border: 'rgba(124,58,237,0.18)' },
+    red:    { icon: 'rgba(220,38,38,0.1)',  text: '#dc2626', border: 'rgba(220,38,38,0.18)' },
+    teal:   { icon: 'rgba(15,118,110,0.1)', text: '#0f766e', border: 'rgba(15,118,110,0.18)' },
+    gray:   { icon: 'var(--bg-overlay)', text: 'var(--text-muted)', border: 'var(--border)' },
   };
   const c = colors[color] || colors.green;
   const [hovered, setHovered] = useState(false);
@@ -374,9 +394,9 @@ export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend
   return (
     <div style={{
       background: 'var(--bg-surface)', border: '1.5px solid var(--border)',
-      borderRadius: 'var(--r-lg)', padding: '18px 20px',
-      boxShadow: hovered ? 'var(--sh-md)' : 'var(--sh-sm)',
-      display: 'flex', alignItems: 'flex-start', gap: 14,
+      borderRadius: 'var(--r-lg)', padding: '16px 18px',
+      boxShadow: hovered ? 'var(--sh-md)' : 'var(--sh-xs)',
+      display: 'flex', alignItems: 'flex-start', gap: 13,
       transition: 'box-shadow 0.15s, transform 0.15s',
       transform: hovered ? 'translateY(-1px)' : 'none',
       cursor: 'default',
@@ -386,25 +406,26 @@ export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend
     >
       {Icon && (
         <div style={{
-          width: 44, height: 44, borderRadius: 'var(--r-md)',
-          background: c.icon, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          width: 40, height: 40, borderRadius: 10,
+          background: c.icon, border: `1.5px solid ${c.border}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         }}>
-          <Icon size={20} color={c.text} />
+          <Icon size={18} color={c.text} />
         </div>
       )}
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 5 }}>{label}</div>
-        <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', letterSpacing: '-0.04em', lineHeight: 1 }}>
+        <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-ghost)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{label}</div>
+        <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', letterSpacing: '-0.04em', lineHeight: 1 }}>
           {typeof value === 'string' && value.includes(' ')
-            ? <><span style={{ fontSize: '1.1rem', fontWeight: 700, opacity: 0.6 }}>{value.split(' ')[0]}</span>{' '}{value.split(' ')[1]}</>
+            ? <><span style={{ fontSize: '1.05rem', fontWeight: 700, opacity: 0.55 }}>{value.split(' ')[0]}</span>{' '}{value.split(' ')[1]}</>
             : (value ?? '—')}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
-          {sub && <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{sub}</div>}
+          {sub && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{sub}</div>}
           {trend != null && (
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 2,
-              fontSize: '0.71rem', fontWeight: 700,
+              fontSize: '0.69rem', fontWeight: 700,
               color: trend >= 0 ? 'var(--primary)' : 'var(--red)',
               background: trend >= 0 ? 'var(--primary-dim)' : 'var(--red-dim)',
               padding: '1px 6px', borderRadius: 99,
@@ -464,18 +485,24 @@ export function Modal({ children, onClose, maxWidth = 540, title }) {
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 1000,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px',
+      // Align to top on mobile (avoids keyboard/browser chrome hiding content),
+      // centred on desktop. padding-top 56px = mobile topbar height + breathing room.
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+      padding: '12px 12px 24px',
+      paddingTop: 'max(12px, env(safe-area-inset-top, 12px))',
       background: 'rgba(4,46,20,0.45)', backdropFilter: 'blur(6px)',
+      overflowY: 'auto',
     }}>
-      <div style={{ position: 'absolute', inset: 0 }} onClick={onClose} />
+      <div style={{ position: 'fixed', inset: 0, zIndex: -1 }} onClick={onClose} />
       <div style={{
         position: 'relative', width: '100%', maxWidth,
         background: 'var(--bg-surface)', borderRadius: 'var(--r-xl)',
-        padding: title ? '0' : '24px',
+        padding: title ? '0' : '26px 24px',
         boxShadow: 'var(--sh-xl)',
         border: '1.5px solid var(--border)',
-        maxHeight: '94vh', overflowY: 'auto',
+        // Removed fixed maxHeight — let content scroll naturally inside the overlay
         animation: 'bounceIn 0.22s ease',
+        marginTop: 'auto', marginBottom: 'auto',
       }}>
         {title && (
           <div style={{
@@ -485,7 +512,14 @@ export function Modal({ children, onClose, maxWidth = 540, title }) {
             borderRadius: 'var(--r-xl) var(--r-xl) 0 0',
           }}>
             <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', letterSpacing: '-0.02em' }}>{title}</h3>
-            <button onClick={onClose} style={{ color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: 4, borderRadius: 6, transition: 'color 0.15s' }}>
+            <button onClick={onClose} style={{
+              color: 'var(--text-muted)', cursor: 'pointer', display: 'flex',
+              padding: 6, borderRadius: 8, transition: 'all 0.15s',
+              background: 'none', border: 'none',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-overlay)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+            >
               <X size={18} />
             </button>
           </div>
@@ -635,12 +669,18 @@ export function Pagination({ page, total, limit, onChange }) {
 }
 
 // ── Filter bar ────────────────────────────────────────────────────────────────
+// On mobile, scrolls horizontally so all controls are reachable without wrapping
 export function FilterBar({ children, style = {} }) {
   return (
-    <div style={{
-      display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
-      marginBottom: 16, ...style,
+    <div className="ws-filterbar" style={{
+      display: 'flex', gap: 8, alignItems: 'center',
+      marginBottom: 16,
+      overflowX: 'auto', overflowY: 'visible',
+      WebkitOverflowScrolling: 'touch',
+      scrollbarWidth: 'none',
+      ...style,
     }}>
+      <style>{`.ws-filterbar::-webkit-scrollbar{display:none}`}</style>
       {children}
     </div>
   );

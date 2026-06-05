@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Clock, Save } from 'lucide-react';
-import { dashApi } from '../api.js';
+import { bizApi } from '../api.js';
 import { PageHeader, Card, Btn, Spinner, Select, Toggle } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
@@ -23,10 +23,18 @@ export default function OpeningHoursPage() {
   const [hours, setHours]     = useState({ enabled: false, timezone: 'UTC', open: 8, close: 22, days: {} });
 
   useEffect(() => {
-    dashApi.settings()
+    // Step 6: GET /business/:id — returns full business config including hours
+    bizApi.get()
       .then(r => {
-        const h = r.data.business?.hours || {};
-        setHours({ enabled: h.enabled || false, timezone: h.timezone || 'UTC', open: h.open ?? 8, close: h.close ?? 22, days: h.days || {} });
+        const biz = r.data.business || r.data || {};
+        const h = biz.hours || {};
+        setHours({
+          enabled:  h.enabled  || false,
+          timezone: h.timezone || 'UTC',
+          open:     h.open     ?? 8,
+          close:    h.close    ?? 22,
+          days:     h.days     || {},
+        });
       })
       .catch(err => toast.error(err.message))
       .finally(() => setLoading(false));
@@ -46,7 +54,9 @@ export default function OpeningHoursPage() {
   const save = async () => {
     setSaving(true);
     try {
-      await dashApi.updateSettings({ hours });
+      // Step 3: PUT /business/:id — send only the hours key
+      // The spec shows: { "hours": { "enabled": true, "timezone": "...", "open": 9, "close": 22 } }
+      await bizApi.update({ hours });
       toast.success('Opening hours saved');
     } catch (err) { toast.error(err.message); }
     finally { setSaving(false); }
@@ -60,7 +70,6 @@ export default function OpeningHoursPage() {
 
       <Card style={{ maxWidth: 600 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-          {/* Toggle */}
           <div style={{ paddingBottom: 18, borderBottom: '1.5px solid var(--border)' }}>
             <Toggle
               checked={hours.enabled}

@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react';
 import { HelpCircle, Plus, Trash2, Pencil, Check, X } from 'lucide-react';
 import { bizApi } from '../api.js';
-import { PageHeader, Card, Btn, EmptyState, Spinner, Input } from '../components/ui.jsx';
+import { PageHeader, Card, Btn, EmptyState, Spinner, Input, Textarea } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
-function FaqRow({ faq, onDelete, onUpdate }) {
+// Per the spec, FAQs live inside the business config document.
+// They are read via GET /business/:id and written via PUT /business/:id { faq: [...] }.
+// There are no separate /faqs CRUD endpoints in the spec.
+// Each faq item: { trigger: string, reply: string }
+// The _id field (if present) is ignored by the backend — the whole faq array is replaced.
+
+function FaqRow({ faq, allFaqs, onFaqsUpdate }) {
   const [editing, setEditing]   = useState(false);
   const [trigger, setTrigger]   = useState(faq.trigger);
   const [reply, setReply]       = useState(faq.reply);
@@ -15,8 +21,15 @@ function FaqRow({ faq, onDelete, onUpdate }) {
     if (!trigger.trim() || !reply.trim()) return;
     setSaving(true);
     try {
-      await bizApi.updateFaq(faq._id, { trigger, reply });
-      onUpdate({ ...faq, trigger, reply });
+      // Update this item's trigger/reply in the array, then PUT the whole faq array
+      const updated = allFaqs.map(f =>
+        (f === faq || f._id === faq._id)
+          ? { trigger: trigger.trim(), reply: reply.trim() }
+          : { trigger: f.trigger, reply: f.reply }
+      );
+      const r = await bizApi.update({ faq: updated });
+      const saved = r.data?.business?.faq || r.data?.faq || updated;
+      onFaqsUpdate(saved);
       setEditing(false);
       toast.success('Auto-reply updated');
     } catch (err) { toast.error(err.message); }
@@ -26,8 +39,13 @@ function FaqRow({ faq, onDelete, onUpdate }) {
   const del = async () => {
     setDeleting(true);
     try {
-      await bizApi.deleteFaq(faq._id);
-      onDelete(faq._id);
+      // Remove this item, then PUT the remaining faq array
+      const updated = allFaqs
+        .filter(f => f !== faq && f._id !== faq._id)
+        .map(f => ({ trigger: f.trigger, reply: f.reply }));
+      const r = await bizApi.update({ faq: updated });
+      const saved = r.data?.business?.faq || r.data?.faq || updated;
+      onFaqsUpdate(saved);
       toast.success('Auto-reply deleted');
     } catch (err) { toast.error(err.message); }
     finally { setDeleting(false); }
@@ -38,11 +56,7 @@ function FaqRow({ faq, onDelete, onUpdate }) {
       <div style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--border-accent)', borderRadius: 'var(--r-lg)', padding: '18px', marginBottom: 8 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Input label="Trigger keyword" value={trigger} onChange={e => setTrigger(e.target.value)} placeholder='e.g. "hours", "price"' />
-          <div>
-            <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>Reply</label>
-            <textarea value={reply} onChange={e => setReply(e.target.value)} rows={3}
-              style={{ width: '100%', padding: '10px 13px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.875rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.6 }} />
-          </div>
+          <Textarea label="Reply" value={reply} onChange={e => setReply(e.target.value)} rows={3} />
           <div style={{ display: 'flex', gap: 8 }}>
             <Btn size="sm" onClick={save} loading={saving}><Check size={13} /> Save</Btn>
             <Btn size="sm" variant="ghost" onClick={() => setEditing(false)}><X size={13} /> Cancel</Btn>
@@ -92,8 +106,12 @@ export default function AutoRepliesPage() {
   const [saving, setSaving]     = useState(false);
 
   useEffect(() => {
-    bizApi.getFaqs()
-      .then(r => setFaqs(r.data.faq || []))
+    // Step 6: GET /business/:id — faq array lives inside the business document
+    bizApi.get()
+      .then(r => {
+        const biz = r.data.business || r.data || {};
+        setFaqs(biz.faq || []);
+      })
       .catch(err => toast.error(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -102,8 +120,14 @@ export default function AutoRepliesPage() {
     if (!newTrigger.trim() || !newReply.trim()) { toast.error('Both trigger and reply are required'); return; }
     setSaving(true);
     try {
-      const r = await bizApi.addFaq({ trigger: newTrigger.trim(), reply: newReply.trim() });
-      setFaqs(r.data.faq || []);
+      // Append to existing faq array, then PUT /business/:id { faq: [...] }
+      const updated = [
+        ...faqs.map(f => ({ trigger: f.trigger, reply: f.reply })),
+        { trigger: newTrigger.trim(), reply: newReply.trim() },
+      ];
+      const r = await bizApi.update({ faq: updated });
+      const saved = r.data?.business?.faq || r.data?.faq || updated;
+      setFaqs(saved);
       setNewTrigger(''); setNewReply(''); setAdding(false);
       toast.success('Auto-reply added');
     } catch (err) { toast.error(err.message); }
@@ -131,13 +155,11 @@ export default function AutoRepliesPage() {
               placeholder='e.g. "price", "hours", "location"'
               hint="When a customer sends this keyword, the bot replies automatically"
             />
-            <div>
-              <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>Reply message</label>
-              <textarea value={newReply} onChange={e => setNewReply(e.target.value)} rows={3}
-                placeholder="We are open Mon–Sat 8am–10pm…"
-                style={{ width: '100%', padding: '10px 13px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.875rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.6 }}
-              />
-            </div>
+            <Textarea
+              label="Reply message"
+              value={newReply} onChange={e => setNewReply(e.target.value)} rows={3}
+              placeholder="We are open Mon–Sat 8am–10pm…"
+            />
             <div style={{ display: 'flex', gap: 8 }}>
               <Btn onClick={addFaq} loading={saving}><Check size={14} /> Add Reply</Btn>
               <Btn variant="ghost" onClick={() => setAdding(false)}>Cancel</Btn>
@@ -157,11 +179,8 @@ export default function AutoRepliesPage() {
         </Card>
       ) : (
         <div className="stagger">
-          {faqs.map(f => (
-            <FaqRow key={f._id} faq={f}
-              onDelete={id => setFaqs(fs => fs.filter(x => x._id !== id))}
-              onUpdate={updated => setFaqs(fs => fs.map(x => x._id === updated._id ? updated : x))}
-            />
+          {faqs.map((f, i) => (
+            <FaqRow key={f._id || i} faq={f} allFaqs={faqs} onFaqsUpdate={setFaqs} />
           ))}
         </div>
       )}

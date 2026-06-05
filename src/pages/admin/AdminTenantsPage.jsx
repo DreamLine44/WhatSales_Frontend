@@ -166,7 +166,7 @@ function CreateTenantModal({ onClose, onCreate }) {
   const selectedMode = SUPPORTED_MODES.find(m => m.value === form.businessMode);
 
   return (
-    <Modal onClose={step === 3 ? onClose : onClose} maxWidth={520}>
+    <Modal onClose={step === 3 ? undefined : onClose} maxWidth={520}>
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1.1rem', marginBottom: 10 }}>
           {step < 3 ? 'Create Tenant' : '🎉 Tenant Created'}
@@ -303,10 +303,10 @@ function RegenKeyModal({ tenant, onClose, onKeyRegenerated }) {
     try {
       const r = await adminApi.regenApiKey(tenant._id);
       // [FIX-REGEN-1] Normalise both response shapes: { apiKey } or { tenant: { apiKey } }
-      const key = r?.data?.apiKey || r?.data?.tenant?.apiKey || null;
+      const key = r.data?.apiKey || r.data?.tenant?.apiKey || null;
       if (!key) {
         throw new Error(
-          'Server did not return a new API key. Expected { apiKey: "..." } in response. Check the backend regen-key route.'
+          'Server did not return a new API key. Expected { apiKey: "..." } in response.'
         );
       }
       setNewKey(key);
@@ -314,10 +314,7 @@ function RegenKeyModal({ tenant, onClose, onKeyRegenerated }) {
       if (onKeyRegenerated) onKeyRegenerated(tenant._id);
       toast.success('API key regenerated successfully');
     } catch (err) {
-      const msg = err.message?.includes('404')
-        ? 'Endpoint not found (404). Your backend may not have a /regen-key route yet. Check your server.'
-        : err.message;
-      toast.error(msg, { duration: 6000 });
+      toast.error(err.message);
     } finally {
       setLoading(false);
     }
@@ -511,34 +508,26 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
   return (
     <>
       <Modal onClose={onClose} maxWidth={560}>
-        {/* Header — sticky within modal */}
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-          marginBottom: 0, paddingBottom: 16, gap: 12,
-          borderBottom: '1.5px solid var(--border)',
-          marginLeft: -24, marginRight: -24, paddingLeft: 24, paddingRight: 24,
-          marginTop: -24, paddingTop: 20,
-          background: 'var(--bg-surface)',
-          borderRadius: 'var(--r-xl) var(--r-xl) 0 0',
-        }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18, gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1.05rem', marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {tenant.name}
             </h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>
-                {String(tenant._id)}
+              <span style={{ fontSize: '0.68rem', color: 'var(--text-ghost)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>
+                {String(tenant._id).slice(0, 20)}…
               </span>
               <CopyBtn value={String(tenant._id)} label="Tenant ID" />
             </div>
           </div>
-          <StatusBadge status={tenant.status || 'PENDING'} style={{ flexShrink: 0, marginTop: 4 }} />
+          <StatusBadge status={tenant.status || 'PENDING'} style={{ flexShrink: 0 }} />
         </div>
 
         {/* Tabs */}
         <div style={{
           display: 'flex', gap: 4, background: 'var(--bg-overlay)',
-          borderRadius: 'var(--r-md)', padding: 4, marginBottom: 20, marginTop: 18,
+          borderRadius: 'var(--r-md)', padding: 4, marginBottom: 20,
         }}>
           {[
             { key: 'info',     label: 'Business' },
@@ -1100,7 +1089,10 @@ export default function AdminTenantsPage() {
               fontFamily: 'var(--font-body)', fontSize: '0.875rem',
               background: 'var(--bg-surface)', color: 'var(--text-primary)',
               outline: 'none', boxSizing: 'border-box',
+              transition: 'border-color 0.15s, box-shadow 0.15s',
             }}
+            onFocus={e => { e.target.style.borderColor = 'var(--primary)'; e.target.style.boxShadow = '0 0 0 3px var(--primary-dim)'; }}
+            onBlur={e => { e.target.style.borderColor = 'var(--border-mid)'; e.target.style.boxShadow = 'none'; }}
           />
         </div>
 

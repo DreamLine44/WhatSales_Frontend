@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Clock, Package, DollarSign } from 'lucide-react';
-import { dashApi } from '../api.js';
+import { dashApi, orderApi } from '../api.js';
 import { PageHeader, Card, StatusBadge, Btn, EmptyState, Spinner, Select, FilterBar, InlineSelect, Pagination } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
+// Step 9: PATCH /admin/orders/:orderId/status
+// Valid statuses: pending | confirmed | completed | cancelled | payment_failed | rejected
+// Customers receive WhatsApp notifications on: confirmed, completed, cancelled, rejected
 const STATUS_OPTIONS = ['pending','confirmed','completed','cancelled','payment_failed','rejected'];
 
 function OrderRow({ order, onUpdate }) {
@@ -15,7 +18,8 @@ function OrderRow({ order, onUpdate }) {
   const handleUpdate = async () => {
     setSaving(true);
     try {
-      await dashApi.updateOrder(order._id, { status: newStatus, notes: notes || undefined });
+      // Step 9: PATCH /admin/orders/:orderId/status — uses TENANT API KEY
+      await orderApi.updateStatus(order._id, { status: newStatus, notes: notes || undefined });
       onUpdate({ ...order, status: newStatus, notes: notes || order.notes });
       toast.success('Order updated');
       setExpanded(false);
@@ -36,7 +40,6 @@ function OrderRow({ order, onUpdate }) {
         display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px',
         cursor: 'pointer', width: '100%', textAlign: 'left', background: 'none', border: 'none',
       }}>
-        {/* Item icon */}
         <div style={{
           width: 38, height: 38, borderRadius: 10, flexShrink: 0,
           background: isNew ? 'var(--primary-dim)' : 'var(--bg-overlay)',
@@ -72,7 +75,6 @@ function OrderRow({ order, onUpdate }) {
 
       {expanded && (
         <div style={{ borderTop: '1.5px solid var(--border)', padding: '16px 18px', background: 'var(--bg-page)', animation: 'fadeIn 0.15s ease' }}>
-          {/* Order details */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 14 }}>
             {order.addOns?.length > 0 && (
               <div>
@@ -102,10 +104,13 @@ function OrderRow({ order, onUpdate }) {
             <div style={{ flex: 1, minWidth: 150 }}>
               <label style={{ fontSize: '0.79rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>Note (optional)</label>
               <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Add a note..."
-                style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.875rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none' }} />
+                style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.875rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
+                onFocus={e => e.target.style.borderColor = 'var(--primary)'}
+                onBlur={e => e.target.style.borderColor = 'var(--border-mid)'}
+              />
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              {newStatus !== order.status && (
+              {(newStatus !== order.status || notes.trim().length > 0) && (
                 <Btn onClick={handleUpdate} loading={saving} size="sm">Save</Btn>
               )}
               <Btn variant="ghost" size="sm" onClick={() => setExpanded(false)}>Close</Btn>
@@ -127,6 +132,7 @@ export default function OrdersPage() {
 
   const load = useCallback(() => {
     setLoading(true);
+    // GET /dashboard/:id/orders — list orders (dashboard read route)
     dashApi.orders({ status: statusFilter || undefined, page, limit: LIMIT })
       .then(r => { setOrders(r.data.orders || []); setTotal(r.data.total || 0); })
       .catch(err => toast.error(err.message))
@@ -135,7 +141,6 @@ export default function OrdersPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Summary counts from loaded page
   const pendingCount = orders.filter(o => o.status === 'pending').length;
   const revenue = orders.filter(o => ['confirmed','completed'].includes(o.status)).reduce((s, o) => s + (o.totalPrice || 0), 0);
 
@@ -147,7 +152,6 @@ export default function OrdersPage() {
         actions={<Btn variant="ghost" size="sm" onClick={load}><RefreshCw size={14} /> Refresh</Btn>}
       />
 
-      {/* Summary strip */}
       {!loading && orders.length > 0 && (
         <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: 'var(--primary-dim)', border: '1.5px solid var(--border-accent)', borderRadius: 'var(--r-md)', fontSize: '0.815rem', fontWeight: 600, color: 'var(--primary)' }}>

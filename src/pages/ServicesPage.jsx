@@ -4,7 +4,12 @@ import { bizApi } from '../api.js';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Input } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
-function ServiceRow({ service, onDelete, onUpdate }) {
+// Services (for SALON/BARBERSHOP modes) are stored inside the business document.
+// Read via GET /business/:id → business.services
+// Written via PUT /business/:id { services: [...] }
+// No separate /services CRUD endpoints exist in the spec.
+
+function ServiceRow({ service, allServices, onServicesUpdate }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: service.name, price: service.price, description: service.description || '', duration: service.duration || 30 });
   const [saving, setSaving] = useState(false);
@@ -14,8 +19,14 @@ function ServiceRow({ service, onDelete, onUpdate }) {
     if (!form.name?.trim()) return;
     setSaving(true);
     try {
-      await bizApi.updateService(service._id, { ...form, price: Number(form.price), duration: Number(form.duration) });
-      onUpdate({ ...service, ...form });
+      const updated = allServices.map(s =>
+        (s === service || s._id === service._id)
+          ? { name: form.name.trim(), price: Number(form.price) || 0, description: form.description || '', duration: Number(form.duration) || 30 }
+          : { name: s.name, price: s.price, description: s.description || '', duration: s.duration || 30 }
+      );
+      const r = await bizApi.update({ services: updated });
+      const saved = r.data?.business?.services || r.data?.services || updated;
+      onServicesUpdate(saved);
       setEditing(false);
       toast.success('Service updated');
     } catch (err) { toast.error(err.message); }
@@ -25,8 +36,12 @@ function ServiceRow({ service, onDelete, onUpdate }) {
   const del = async () => {
     setDeleting(true);
     try {
-      await bizApi.deleteService(service._id);
-      onDelete(service._id);
+      const updated = allServices
+        .filter(s => s !== service && s._id !== service._id)
+        .map(s => ({ name: s.name, price: s.price, description: s.description || '', duration: s.duration || 30 }));
+      const r = await bizApi.update({ services: updated });
+      const saved = r.data?.business?.services || r.data?.services || updated;
+      onServicesUpdate(saved);
       toast.success('Service deleted');
     } catch (err) { toast.error(err.message); }
     finally { setDeleting(false); }
@@ -75,8 +90,12 @@ export default function ServicesPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    bizApi.getServices()
-      .then(r => setServices(r.data.services || []))
+    // GET /business/:id — services array is inside the business document
+    bizApi.get()
+      .then(r => {
+        const biz = r.data.business || r.data || {};
+        setServices(biz.services || []);
+      })
       .catch(err => toast.error(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -85,8 +104,13 @@ export default function ServicesPage() {
     if (!form.name?.trim()) { toast.error('Name is required'); return; }
     setSaving(true);
     try {
-      const r = await bizApi.addService({ ...form, price: Number(form.price), duration: Number(form.duration) });
-      setServices(r.data.services || []);
+      const updated = [
+        ...services.map(s => ({ name: s.name, price: s.price, description: s.description || '', duration: s.duration || 30 })),
+        { name: form.name.trim(), price: Number(form.price) || 0, description: form.description || '', duration: Number(form.duration) || 30 },
+      ];
+      const r = await bizApi.update({ services: updated });
+      const saved = r.data?.business?.services || r.data?.services || updated;
+      setServices(saved);
       setForm({ name: '', price: '', description: '', duration: '30' });
       setAdding(false);
       toast.success('Service added');
@@ -126,11 +150,8 @@ export default function ServicesPage() {
           action={<Btn onClick={() => setAdding(true)}><Plus size={14} /> Add first service</Btn>}
         /></Card>
       ) : (
-        <div>{services.map(s => (
-          <ServiceRow key={s._id} service={s}
-            onDelete={id => setServices(xs => xs.filter(x => x._id !== id))}
-            onUpdate={u => setServices(xs => xs.map(x => x._id === u._id ? u : x))}
-          />
+        <div>{services.map((s, i) => (
+          <ServiceRow key={s._id || i} service={s} allServices={services} onServicesUpdate={setServices} />
         ))}</div>
       )}
     </div>

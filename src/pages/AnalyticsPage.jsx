@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { BarChart3, TrendingUp, ShoppingCart, Calendar, RefreshCw } from 'lucide-react';
+import { BarChart3, TrendingUp, ShoppingCart, Calendar, RefreshCw, Users } from 'lucide-react';
 import { dashApi } from '../api.js';
 import { PageHeader, StatCard, Card, Btn, Spinner, InlineSelect } from '../components/ui.jsx';
 import toast from 'react-hot-toast';

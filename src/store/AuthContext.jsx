@@ -30,7 +30,7 @@ export function AuthProvider({ children }) {
 
   // [FIX-AUTH-3] Define restore with useCallback BEFORE useEffect to avoid
   // the stale-closure / undefined-reference bug from calling it in useEffect deps.
-  const restore = useCallback(async (tenantId, apiKey) => {
+  const restore = useCallback(async (tenantId, apiKey, silent = false) => {
     try {
       const data = await authApi.getTenantInfo(tenantId, apiKey);
       setUser(buildUserFromResponse(tenantId, data));
@@ -39,7 +39,7 @@ export function AuthProvider({ children }) {
       localStorage.removeItem('ws_tenant_id');
       localStorage.removeItem('ws_api_key');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -74,7 +74,7 @@ export function AuthProvider({ children }) {
   const refreshUser = useCallback(async () => {
     const tenantId = localStorage.getItem('ws_tenant_id');
     const apiKey   = localStorage.getItem('ws_api_key');
-    if (tenantId && apiKey) await restore(tenantId, apiKey);
+    if (tenantId && apiKey) await restore(tenantId, apiKey, true);
   }, [restore]);
 
   return (

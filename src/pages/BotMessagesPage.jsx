@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Bot, Save } from 'lucide-react';
-import { dashApi } from '../api.js';
+import { bizApi } from '../api.js';
 import { PageHeader, Card, Btn, Spinner, InfoBanner } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
@@ -44,8 +44,12 @@ export default function BotMessagesPage() {
   const [msgs, setMsgs]       = useState({});
 
   useEffect(() => {
-    dashApi.settings()
-      .then(r => setMsgs(r.data.business?.customMessages || {}))
+    // Step 6: GET /business/:id — customMessages are part of the business document
+    bizApi.get()
+      .then(r => {
+        const biz = r.data.business || r.data || {};
+        setMsgs(biz.customMessages || {});
+      })
       .catch(err => toast.error(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -53,7 +57,8 @@ export default function BotMessagesPage() {
   const save = async () => {
     setSaving(true);
     try {
-      await dashApi.updateSettings({ customMessages: msgs });
+      // Step 3: PUT /business/:id — send only customMessages key
+      await bizApi.update({ customMessages: msgs });
       toast.success('Bot messages saved');
     } catch (err) { toast.error(err.message); }
     finally { setSaving(false); }

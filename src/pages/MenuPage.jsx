@@ -5,46 +5,64 @@ import { useAuth } from '../store/AuthContext.jsx';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Input } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
-function ItemRow({ item, onDelete, onUpdate }) {
+// The spec exposes:
+//   GET    /business/:id/menu         — fetch menu
+//   PUT    /business/:id/menu         — replace entire menu  (Step 4)
+//   POST   /business/:id/menu         — add single item      (Step 8)
+//   DELETE /business/:id/menu/:itemId — delete one item      (Step 12)
+// There is no PATCH /business/:id/menu/:itemId in the spec.
+// Editing an item is done by replacing the whole menu (PUT) with the updated set.
+
+function ItemRow({ item, allItems, onMenuUpdate }) {
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ name: item.name, price: item.price, description: item.description || '' });
+  const [form, setForm] = useState({
+    name: item.name,
+    price: item.price,
+    description: item.description || '',
+    available: item.available !== false,
+  });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [toggling, setToggling] = useState(false);
 
+  // Edit: replace entire menu with updated item — only way per spec (no PATCH)
   const save = async () => {
     if (!form.name?.trim()) return;
     setSaving(true);
     try {
-      const fd = new FormData();
-      fd.append('name', form.name.trim());
-      fd.append('price', form.price || 0);
-      fd.append('description', form.description || '');
-      await bizApi.updateMenuItem(item._id, fd);
-      onUpdate({ ...item, ...form });
+      const updated = allItems.map(i =>
+        i._id === item._id
+          ? { ...i, name: form.name.trim(), price: Number(form.price) || 0, description: form.description || '', available: form.available }
+          : i
+      );
+      const r = await bizApi.replaceMenu(updated);
+      onMenuUpdate(r.data.menuItems || updated);
       setEditing(false);
       toast.success('Item updated');
     } catch (err) { toast.error(err.message); }
     finally { setSaving(false); }
   };
 
+  // Delete: DELETE /business/:id/menu/:itemId  (Step 12)
   const del = async () => {
     setDeleting(true);
     try {
       await bizApi.deleteMenuItem(item._id);
-      onDelete(item._id);
+      onMenuUpdate(allItems.filter(i => i._id !== item._id));
       toast.success('Item deleted');
     } catch (err) { toast.error(err.message); }
     finally { setDeleting(false); }
   };
 
+  // Toggle availability: replace entire menu with toggled item
   const toggleAvail = async () => {
     setToggling(true);
     try {
-      const fd = new FormData();
-      fd.append('available', !item.available);
-      await bizApi.updateMenuItem(item._id, fd);
-      onUpdate({ ...item, available: !item.available });
+      const updated = allItems.map(i =>
+        i._id === item._id ? { ...i, available: !i.available } : i
+      );
+      const r = await bizApi.replaceMenu(updated);
+      onMenuUpdate(r.data.menuItems || updated);
     } catch (err) { toast.error(err.message); }
     finally { setToggling(false); }
   };
@@ -69,6 +87,9 @@ function ItemRow({ item, onDelete, onUpdate }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
               <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{item.name}</span>
               {!item.available && <span style={{ fontSize: '0.7rem', color: 'var(--text-ghost)', fontWeight: 600 }}>UNAVAILABLE</span>}
+              {item.tags?.length > 0 && item.tags.map(tag => (
+                <span key={tag} style={{ fontSize: '0.67rem', background: 'var(--primary-dim)', color: 'var(--primary)', borderRadius: 99, padding: '1px 7px', fontWeight: 700 }}>{tag}</span>
+              ))}
             </div>
             {item.description && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 2 }}>{item.description}</div>}
             <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--primary)' }}>D {Number(item.price).toFixed(2)}</div>
@@ -92,12 +113,13 @@ export default function MenuPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: '', price: '', description: '' });
+  const [form, setForm] = useState({ name: '', price: '', description: '', keywords: '' });
   const [saving, setSaving] = useState(false);
   const mode = user?.businessMode || 'RESTAURANT';
   const label = ['SALON','BARBERSHOP'].includes(mode) ? 'Products' : ['RESTAURANT','BAKERY'].includes(mode) ? 'Menu Items' : 'Products';
 
   useEffect(() => {
+    // Step 5: GET /business/:id/menu
     bizApi.getMenu()
       .then(r => setItems(r.data.menuItems || []))
       .catch(err => toast.error(err.message))
@@ -108,13 +130,19 @@ export default function MenuPage() {
     if (!form.name?.trim()) { toast.error('Name is required'); return; }
     setSaving(true);
     try {
-      const fd = new FormData();
-      fd.append('name', form.name.trim());
-      fd.append('price', form.price || 0);
-      fd.append('description', form.description || '');
-      const r = await bizApi.addMenuItem(fd);
-      setItems(r.data.menuItems || []);
-      setForm({ name: '', price: '', description: '' });
+      // Step 8: POST /business/:id/menu — add single item (JSON body, not FormData)
+      const body = {
+        name:        form.name.trim(),
+        price:       Number(form.price) || 0,
+        description: form.description || '',
+        available:   true,
+        keywords:    form.keywords ? form.keywords.split(',').map(k => k.trim()).filter(Boolean) : [],
+        tags:        [],
+      };
+      const r = await bizApi.addMenuItem(body);
+      // Response returns updated menuItems array
+      setItems(r.data.menuItems || [...items, body]);
+      setForm({ name: '', price: '', description: '', keywords: '' });
       setAdding(false);
       toast.success('Item added');
     } catch (err) { toast.error(err.message); }
@@ -136,6 +164,7 @@ export default function MenuPage() {
               <Input label="Price (D)" type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="150" />
             </div>
             <Input label="Description (optional)" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Short description..." />
+            <Input label="Keywords (comma-separated)" value={form.keywords} onChange={e => setForm(f => ({ ...f, keywords: e.target.value }))} placeholder="jollof, rice, national dish" hint="Helps the bot match customer messages to this item" />
             <div style={{ display: 'flex', gap: 8 }}>
               <Btn onClick={add} loading={saving}><Check size={14} /> Add Item</Btn>
               <Btn variant="ghost" onClick={() => setAdding(false)}>Cancel</Btn>
@@ -153,10 +182,7 @@ export default function MenuPage() {
         /></Card>
       ) : (
         <div>{items.map(item => (
-          <ItemRow key={item._id} item={item}
-            onDelete={id => setItems(xs => xs.filter(x => x._id !== id))}
-            onUpdate={u => setItems(xs => xs.map(x => x._id === u._id ? u : x))}
-          />
+          <ItemRow key={item._id} item={item} allItems={items} onMenuUpdate={setItems} />
         ))}</div>
       )}
     </div>
