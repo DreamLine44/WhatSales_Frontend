@@ -519,14 +519,24 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
     setVerifying(true);
     try {
       const r = await adminApi.verifyWhatsApp(tenant._id);
-      const { displayPhoneNumber, verifiedName, onboardingStep } = r.data || {};
+      const { displayPhone, verifiedName, onboardingStep } = r.data || {};
       applyUpdate(prev => ({
         onboardingStep: onboardingStep || 3,
         whatsapp: { ...prev.whatsapp, connected: true },
       }));
-      toast.success(`✅ Verified: ${verifiedName || 'Business'} (${displayPhoneNumber || tenant.whatsapp?.phone || ''})`);
+      toast.success(`✅ Verified: ${verifiedName || 'Business'} (${displayPhone || tenant.whatsapp?.phone || ''})`);
     } catch (err) {
-      toast.error(`Verification failed: ${err.message}`);
+      // Provide specific guidance for common Meta API errors
+      const msg = err.message || '';
+      const isNotFound = msg.toLowerCase().includes('does not exist') || msg.toLowerCase().includes('unsupported get');
+      const isPermission = msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('oauth');
+      let guidance = '';
+      if (isNotFound) {
+        guidance = ' • The Phone Number ID looks wrong. In Meta Business Manager → WhatsApp → API Setup, copy the numeric Phone Number ID (NOT the WABA ID or App ID).';
+      } else if (isPermission) {
+        guidance = ' • Access Token may be expired or missing whatsapp_business_messaging permission. Generate a new System User token in Meta Business Manager.';
+      }
+      toast.error(`Verification failed: ${msg}${guidance}`, { duration: 10000 });
     } finally {
       setVerifying(false);
     }
@@ -544,22 +554,20 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
         return;
       }
       // Guard: onboardingStep < 3 means WhatsApp credentials haven't been verified yet.
-      // Backend will reject unless force:true is sent. Show a warning and ask for confirmation.
+      // Auto-force-activate when not yet verified — guide admin to verify separately.
       if ((tenant.onboardingStep ?? 0) < 3 && !tenant.whatsapp?.connected) {
-        const confirmed = window.confirm(
-          'WhatsApp credentials have not been verified yet (onboarding step < 3).\n\nActivating now will force-activate without verification — the bot may not respond until credentials are confirmed.\n\nContinue anyway?'
-        );
-        if (!confirmed) return;
-        // Send force:true so the backend accepts the out-of-order activation
+        
         setStatusSaving(true);
         try {
           await adminApi.updateStatus(tenant._id, newStatus, { force: true });
           applyUpdate({ status: newStatus });
-          toast.success(`Status updated → ${newStatus} (forced)`);
+          toast.success(`${tenant.name || "Tenant"} → ${newStatus}`);
+          toast('Next step: WhatsApp tab → Save Credentials → Verify WhatsApp so the bot responds correctly.', { icon: 'ℹ️', duration: 7000 });
         } catch (err) {
           toast.error(err.message);
         } finally {
           setStatusSaving(false);
+          
         }
         return;
       }
@@ -701,8 +709,13 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
 
             <Input label="WhatsApp Phone Number" value={form.whatsapp.phone}
               onChange={e => setWA('phone', e.target.value)} placeholder="+220 xxx xxxx" />
-            <Input label="Phone Number ID" value={form.whatsapp.phoneNumberId}
-              onChange={e => setWA('phoneNumberId', e.target.value)} placeholder="From Meta Business Manager" />
+            <div>
+              <Input label="Phone Number ID" value={form.whatsapp.phoneNumberId}
+                onChange={e => setWA('phoneNumberId', e.target.value)} placeholder="e.g. 123456789012345" />
+              <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+                ⚠️ Must be the <strong>Phone Number ID</strong> — a long numeric ID from Meta for Developers → WhatsApp → API Setup → "Phone number ID" field. Do NOT use the WABA ID, App ID, or phone number itself.
+              </p>
+            </div>
             <Input
               label={`Access Token${tenant.whatsapp?.phoneNumberId ? ' (leave blank to keep existing)' : ''}`}
               value={form.whatsapp.accessToken}
@@ -731,8 +744,8 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
                 variant="ghost"
                 onClick={verifyWA}
                 loading={verifying}
-                disabled={!tenant.whatsapp?.phoneNumberId}
-                title={!tenant.whatsapp?.phoneNumberId ? 'Save phoneNumberId and accessToken first' : 'Call Meta API to verify credentials'}
+                disabled={!tenant.whatsapp?.phoneNumberId && !form.whatsapp.phoneNumberId}
+                title={(!tenant.whatsapp?.phoneNumberId && !form.whatsapp.phoneNumberId) ? 'Enter and save Phone Number ID + Access Token first' : tenant.whatsapp?.phoneNumberId ? 'Call Meta API to verify stored credentials' : 'Save credentials first, then verify'}
                 style={{ alignSelf: 'flex-start' }}
               >
                 <CheckCircle2 size={14} /> Verify WhatsApp
@@ -781,7 +794,7 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
                 <div style={{ background: 'var(--amber-dim)', border: '1.5px solid rgba(217,119,6,0.22)', borderRadius: 'var(--r-md)', padding: '10px 14px', marginBottom: 14, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                   <Info size={14} color="var(--amber)" style={{ flexShrink: 0, marginTop: 1 }} />
                   <span style={{ fontSize: '0.8rem', color: 'var(--amber)', lineHeight: 1.5 }}>
-                    <strong>WhatsApp not yet verified</strong> (onboarding step {step}/3). Activating now requires <code>force: true</code> — you'll be asked to confirm. Use the WhatsApp tab → Verify WhatsApp first for a clean activation.
+                    <strong>WhatsApp not yet verified</strong> (onboarding step {step}/3). Activating will proceed automatically. For the bot to work correctly, use the WhatsApp tab → Save Credentials → <strong>Verify WhatsApp</strong> first.
                   </span>
                 </div>
               );
@@ -932,18 +945,15 @@ function TenantRow({ tenant, onUpdate, onDelete }) {
         toast.error('Cannot activate: SIM_ placeholder credentials detected. Set real Meta credentials first via Edit → WhatsApp.');
         return;
       }
-      // Guard: not yet verified — warn and allow with force:true
+      // Auto-force-activate when not yet verified — guide admin to verify separately.
       if ((tenant.onboardingStep ?? 0) < 3 && !tenant.whatsapp?.connected) {
-        const confirmed = window.confirm(
-          'WhatsApp credentials have not been verified yet (onboarding step < 3).\n\nForce-activate anyway? The bot may not respond until credentials are fully confirmed via Meta.'
-        );
-        if (!confirmed) return;
         togglePending.current = true;
         setTogglingStatus(true);
         try {
           await adminApi.updateStatus(tenant._id, newStatus, { force: true });
           onUpdate({ ...tenant, status: newStatus });
-          toast.success(`${tenant.name} → ${newStatus} (forced)`);
+          toast.success(`${tenant.name || "Tenant"} → ${newStatus}`);
+          toast('Next step: open Edit → WhatsApp tab → Verify WhatsApp to confirm credentials with Meta.', { icon: 'ℹ️', duration: 7000 });
         } catch (err) {
           toast.error(err.message);
         } finally {

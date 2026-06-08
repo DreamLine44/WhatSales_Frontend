@@ -485,11 +485,9 @@ export function Modal({ children, onClose, maxWidth = 540, title }) {
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 1000,
-      // Align to top on mobile (avoids keyboard/browser chrome hiding content),
-      // centred on desktop. padding-top 56px = mobile topbar height + breathing room.
-      display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-      padding: '12px 12px 24px',
-      paddingTop: 'max(12px, env(safe-area-inset-top, 12px))',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '16px 12px',
+      paddingTop: 'max(16px, env(safe-area-inset-top, 16px))',
       background: 'rgba(4,46,20,0.45)', backdropFilter: 'blur(6px)',
       overflowY: 'auto',
     }}>
@@ -500,9 +498,13 @@ export function Modal({ children, onClose, maxWidth = 540, title }) {
         padding: title ? '0' : '26px 24px',
         boxShadow: 'var(--sh-xl)',
         border: '1.5px solid var(--border)',
-        // Removed fixed maxHeight — let content scroll naturally inside the overlay
+        maxHeight: 'calc(100vh - 32px)',
+        overflowY: 'auto',
         animation: 'bounceIn 0.22s ease',
-        marginTop: 'auto', marginBottom: 'auto',
+        flexShrink: 0,
+        alignSelf: 'flex-start',
+        marginTop: 'auto',
+        marginBottom: 'auto',
       }}>
         {title && (
           <div style={{
