@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Wifi, CheckCircle2, AlertCircle, Loader2, RefreshCw, Info } from 'lucide-react';
+import { Wifi, CheckCircle2, AlertCircle, Loader2, RefreshCw, Info, Phone } from 'lucide-react';
 import { useAuth } from '../store/AuthContext.jsx';
+import { bizApi } from '../api.js';
 import { PageHeader, Card, Btn, CopyField, Badge, InfoBanner } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
@@ -13,26 +14,25 @@ const SETUP_STEPS = [
   { key: 'active',    label: 'Bot Activated',           desc: 'Your AI assistant is live and responding' },
 ];
 
-// [FIX-WA-STEP] Access tokens are hashed on the server and never returned to the frontend.
-// Previously step 3 (accessToken check) always showed "pending" even when fully configured.
-// Now we derive progress purely from visible, non-sensitive fields:
-//   0 = account created only
-//   1 = setup submitted (no phoneNumberId yet)
-//   2 = admin has phoneNumberId but no verifyToken — partially configured
-//   3 = phoneNumberId + verifyToken set — waiting for OTP / webhook verification
-//   4 = phoneNumberId + verifyToken + NOT yet connected — credentials complete
-//   5 = connected flag is true — fully live
-// [FIX] step 5 = fully live, step 4 = credentials complete awaiting OTP/session,
-// step 3 = phoneNumberId+verifyToken present, step 2 = phoneNumberId only,
-// step 1 = account exists no creds yet, step 0 = just created.
-// Also treat ACTIVE+credentials as step 4 so users don't stay stuck at "pending".
-function getStepIndex(whatsapp, tenantStatus) {
-  if (!whatsapp) return 0;
-  if (whatsapp.connected) return 5;
-  // Admin set ACTIVE + credentials saved → treat as step 4 (provisioning / live)
-  if (tenantStatus === 'ACTIVE' && whatsapp.phoneNumberId) return 4;
-  if (whatsapp.phoneNumberId && whatsapp.verifyToken) return 4;
-  if (whatsapp.phoneNumberId) return 2;
+// [FIX-WA-STEP] Derive setup progress from fields visible with a tenant API key.
+// ⚠ accessToken / verifyToken are ALWAYS stripped server-side — never check them.
+// ⚠ whatsapp.connected is only in the Tenant doc (not BusinessConfig) and is NOT
+//   returned by any tenant-accessible endpoint. We infer status from phoneNumberId.
+// Priority: live business.phoneNumberId from fresh /business fetch > cached user object.
+function getStepIndex(wa, tenantStatus, onboardingStep) {
+  if (!wa) return 0;
+  // If the backend ever adds a connected field to BusinessConfig, honour it:
+  if (wa.connected === true) return 5;
+  // Use authoritative onboardingStep when it's a real number (> 1 = admin-managed)
+  if (typeof onboardingStep === 'number' && onboardingStep > 1) {
+    if (onboardingStep >= 4) return 4;
+    if (onboardingStep === 3) return 3;
+    if (onboardingStep === 2) return 2;
+    return 1;
+  }
+  // Fallback inference from fields we can actually read:
+  if (tenantStatus === 'ACTIVE' && wa.phoneNumberId) return 4;
+  if (wa.phoneNumberId) return 2;
   return 1;
 }
 
@@ -77,162 +77,186 @@ function StepItem({ step, status, isLast }) {
 export default function WhatsAppPage() {
   const { user, refreshUser } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
-  const wa = user?.whatsapp || {};
-  const connected = !!(wa.connected || (user?.status === 'ACTIVE' && wa.phoneNumberId));
-  const stepIndex = getStepIndex(wa, user?.status);
+  // [FIX-WA-LIVE] Fetch fresh business data to get the latest phoneNumberId.
+  // AuthContext synthesises whatsapp from business.phoneNumberId on login/restore,
+  // but that snapshot may be stale. A direct GET /business/:id gives the live value.
+  const [liveBiz, setLiveBiz] = useState(null);
+  const [bizLoading, setBizLoading] = useState(true);
 
-  // [FIX-POLL] When ACTIVE+configured but not yet showing as fully live,
-  // auto-refresh every 15s so the UI updates once the bot initialises.
   useEffect(() => {
-    if (wa.connected) return; // already live, no need to poll
-    if (user?.status !== 'ACTIVE') return; // not activated yet
-    const timer = setInterval(() => {
-      refreshUser().catch(() => {});
-    }, 15000);
-    return () => clearInterval(timer);
-  }, [wa.connected, user?.status, refreshUser]);
+    bizApi.get()
+      .then(r => setLiveBiz(r.data?.business || r.data || {}))
+      .catch(() => setLiveBiz(null))
+      .finally(() => setBizLoading(false));
+  }, []);
+
+  // Prefer live data over cached user object for WhatsApp fields
+  const wa = liveBiz
+    ? (liveBiz.phoneNumberId ? { phoneNumberId: liveBiz.phoneNumberId } : {})
+    : (user?.whatsapp || {});
+
+  const tenantStatus   = user?.status || 'ACTIVE';
+  const onboardingStep = user?.onboardingStep ?? null;
+  const stepIdx        = getStepIndex(wa, tenantStatus, onboardingStep);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    try { await refreshUser(); toast.success('Status refreshed'); }
-    catch (err) { toast.error(err.message); }
-    finally { setRefreshing(false); }
+    setBizLoading(true);
+    try {
+      await refreshUser();
+      const r = await bizApi.get();
+      setLiveBiz(r.data?.business || r.data || {});
+      toast.success('Status refreshed');
+    } catch (err) {
+      toast.error(err.message || 'Failed to refresh');
+    } finally {
+      setRefreshing(false);
+      setBizLoading(false);
+    }
   };
 
-  const apiBase    = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up.railway.app';
-  // [FIX-WA-WEBHOOK] Webhook URL must include the tenant ID so the backend can route messages correctly
-  const webhookUrl = user?.tenantId
-    ? `${apiBase}/webhook/${user.tenantId}`
-    : `${apiBase}/webhook`;
+  const isConnected = wa.connected === true || stepIdx >= 5;
+  const isConfigured = !!(wa.phoneNumberId);
+  const webHookBase = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up.railway.app';
 
   return (
     <div className="fade-in">
       <PageHeader
-        icon={Wifi} title="WhatsApp" subtitle="Your WhatsApp Business connection"
+        icon={Wifi}
+        title="WhatsApp Connection"
+        subtitle="Status of your WhatsApp Business API integration"
         actions={
           <Btn variant="ghost" size="sm" onClick={handleRefresh} loading={refreshing}>
-            <RefreshCw size={13} /> Refresh Status
+            <RefreshCw size={14} /> Refresh Status
           </Btn>
         }
       />
 
-      {/* [FIX] Status card — green if connected OR provisioned (ACTIVE+creds) */}
-      <Card style={{
-        marginBottom: 20,
-        borderColor: connected ? 'var(--border-accent)' : 'var(--border)',
-        background: connected ? 'var(--green-50)' : 'var(--bg-surface)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{
-            width: 54, height: 54, borderRadius: 'var(--r-xl)',
-            background: connected ? 'rgba(10,122,60,0.12)' : 'var(--bg-overlay)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>
-            {connected
-              ? <CheckCircle2 size={28} color="var(--primary)" />
-              : wa.phoneNumberId && user?.status === 'ACTIVE'
-                ? <Wifi size={28} color="var(--primary)" />
-                : <AlertCircle size={28} color="var(--text-muted)" />}
-          </div>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1.05rem', letterSpacing: '-0.025em', marginBottom: 4 }}>
-              {connected ? 'WhatsApp Connected' : 'WhatsApp Not Connected'}
-            </div>
-            <div style={{ fontSize: '0.83rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              {connected
-                ? `Your bot is live on ${wa.phone || 'your WhatsApp number'}. Customers can start chatting right now.`
-                : wa.phoneNumberId
-                  ? (user?.status === 'ACTIVE'
-                      ? 'Your bot is provisioned and going live. Messages will be handled shortly.'
-                      : 'Credentials are configured. Waiting for webhook verification or OTP to complete setup.')
-                  : 'Your WhatsApp number has not been connected yet. Contact your administrator to start setup.'}
-            </div>
-          </div>
-          <Badge color={connected ? 'green' : wa.phoneNumberId ? 'blue' : 'amber'} dot>
-            {connected ? 'Active' : wa.phoneNumberId ? (user?.status === 'ACTIVE' ? 'Live' : 'Configuring') : 'Pending Setup'}
-          </Badge>
-        </div>
+      {/* Connection status banner */}
+      {!bizLoading && (
+        <InfoBanner
+          type={isConnected ? 'success' : isConfigured ? 'warning' : 'info'}
+          style={{ marginBottom: 20 }}
+        >
+          {isConnected
+            ? '✅ Your WhatsApp number is connected and the bot is active.'
+            : isConfigured
+            ? '⏳ Your WhatsApp credentials are saved. Your account is pending activation by our team.'
+            : '📋 WhatsApp setup is managed by our team. Contact your administrator to get started.'}
+        </InfoBanner>
+      )}
 
-        {connected && (
-          <div style={{
-            marginTop: 16, paddingTop: 16, borderTop: '1.5px solid var(--border)',
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14,
-          }}>
-            {wa.phone && (
-              <div>
-                <div style={{ fontSize: '0.69rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>Business Number</div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 700 }}>{wa.phone}</div>
-              </div>
-            )}
-            {user?.name && (
-              <div>
-                <div style={{ fontSize: '0.69rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>Business Name</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 700 }}>{user.name}</div>
-              </div>
-            )}
-            {wa.apiVersion && (
-              <div>
-                <div style={{ fontSize: '0.69rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>API Version</div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-primary)' }}>{wa.apiVersion}</div>
-              </div>
-            )}
-          </div>
-        )}
-      </Card>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
 
-      {/* Two-column layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 20 }}>
         {/* Setup progress */}
         <Card>
-          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.95rem', marginBottom: 20, letterSpacing: '-0.02em' }}>Setup Progress</h3>
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', letterSpacing: '-0.02em' }}>
+              Setup Progress
+            </h2>
+            <Badge color={isConnected ? 'green' : isConfigured ? 'amber' : 'gray'}>
+              {isConnected ? 'Connected' : isConfigured ? 'In Progress' : 'Not Started'}
+            </Badge>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {SETUP_STEPS.map((step, i) => {
-              let status = 'pending';
-              if (i < stepIndex) status = 'done';
-              else if (i === stepIndex) status = 'active';
-              return <StepItem key={step.key} step={step} status={status} isLast={i === SETUP_STEPS.length - 1} />;
+              const status = i < stepIdx ? 'done' : i === stepIdx ? 'active' : 'pending';
+              return (
+                <StepItem
+                  key={step.key}
+                  step={step}
+                  status={status}
+                  isLast={i === SETUP_STEPS.length - 1}
+                />
+              );
             })}
           </div>
         </Card>
 
-        {/* Account details */}
-        <Card>
-          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.95rem', marginBottom: 6, letterSpacing: '-0.02em' }}>Your Account Details</h3>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 18, lineHeight: 1.55 }}>
-            Share these with your administrator to set up your WhatsApp connection.
-          </p>
-          <CopyField label="Tenant ID" value={user?.tenantId || '—'} />
-          {wa.phoneNumberId && <CopyField label="Phone Number ID" value={wa.phoneNumberId} />}
-          {wa.phone         && <CopyField label="WhatsApp Number"  value={wa.phone} />}
+        {/* Connection details */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-          <InfoBanner type="warning" style={{ marginTop: 16 }}>
-            <div style={{ fontWeight: 800, marginBottom: 6, fontSize: '0.75rem', letterSpacing: '0.05em', textTransform: 'uppercase' }}>HOW TO CONNECT</div>
-            <ol style={{ paddingLeft: 16, lineHeight: 1.9, margin: 0, fontSize: '0.8rem' }}>
-              <li>Contact your WhatSales administrator</li>
-              <li>Provide your Tenant ID above</li>
-              <li>Admin will configure Meta WhatsApp credentials</li>
-              <li>You'll receive an OTP on your WhatsApp number</li>
-              <li>Share the OTP with your admin to complete setup</li>
-            </ol>
-          </InfoBanner>
-        </Card>
+          {/* Phone number info */}
+          <Card>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', letterSpacing: '-0.02em', marginBottom: 16 }}>
+              Connection Details
+            </h2>
+
+            {bizLoading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0' }}>
+                <Loader2 size={22} style={{ animation: 'spin 1s linear infinite', color: 'var(--text-muted)' }} />
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Phone Number ID</div>
+                  {wa.phoneNumberId
+                    ? <CopyField value={wa.phoneNumberId} label="Phone Number ID" />
+                    : <div style={{ fontSize: '0.875rem', color: 'var(--text-ghost)', fontStyle: 'italic' }}>Not configured yet</div>
+                  }
+                </div>
+
+                {wa.phone && (
+                  <div>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>WhatsApp Number</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Phone size={14} color="var(--primary)" />
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.9rem' }}>{wa.phone}</span>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Bot Status</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {isConnected
+                      ? <><CheckCircle2 size={16} color="var(--primary)" /><span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--primary)' }}>Bot Active</span></>
+                      : isConfigured
+                      ? <><AlertCircle size={16} color="var(--amber)" /><span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--amber)' }}>Awaiting Activation</span></>
+                      : <><AlertCircle size={16} color="var(--text-muted)" /><span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Not Configured</span></>
+                    }
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          {/* Webhook info (only shown when configured) */}
+          {isConfigured && (
+            <Card>
+              <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', letterSpacing: '-0.02em', marginBottom: 4 }}>
+                Webhook Configuration
+              </h2>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 14 }}>
+                These are already configured by our team. For reference only.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>Webhook URL</div>
+                  <CopyField value={`${webHookBase}/webhook`} label="Webhook URL" />
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Help card */}
+          <Card style={{ background: 'var(--bg-overlay)', border: '1.5px solid var(--border)' }}>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Info size={16} color="var(--blue)" style={{ flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  How WhatsApp setup works
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
+                  WhatsApp Business API connections are set up by our admin team.
+                  Once your number is verified with Meta, your bot will be activated automatically.
+                  Contact <strong>support@whatsales.app</strong> if setup has not progressed within 24 hours.
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
       </div>
-
-      {/* Webhook info */}
-      <Card>
-        <details>
-          <summary style={{ cursor: 'pointer', fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-secondary)', userSelect: 'none', padding: '2px 0', letterSpacing: '-0.01em' }}>
-            Webhook Information (for admin reference)
-          </summary>
-          <div style={{ marginTop: 16 }}>
-            <CopyField label="Webhook URL" value={webhookUrl} />
-            {wa.verifyToken && <CopyField label="Verify Token" value={wa.verifyToken} secret />}
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 10, lineHeight: 1.6 }}>
-              Configure in your Meta for Developers app under WhatsApp → Configuration → Webhooks. Subscribe to <strong>messages</strong> events.
-            </p>
-          </div>
-        </details>
-      </Card>
     </div>
   );
 }

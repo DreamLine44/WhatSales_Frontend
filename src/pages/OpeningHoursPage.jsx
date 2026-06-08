@@ -54,9 +54,10 @@ export default function OpeningHoursPage() {
   const save = async () => {
     setSaving(true);
     try {
-      // Step 3: PUT /business/:id — send only the hours key
-      // The spec shows: { "hours": { "enabled": true, "timezone": "...", "open": 9, "close": 22 } }
-      await bizApi.update({ hours });
+      // PATCH /dashboard/:id/settings — partial update, only sends the hours key.
+      // Previously used PUT /business/:id which replaces the whole document and
+      // would silently drop any fields not included in this payload.
+      await bizApi.updateSettings({ hours });
       toast.success('Opening hours saved');
     } catch (err) { toast.error(err.message); }
     finally { setSaving(false); }

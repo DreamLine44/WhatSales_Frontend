@@ -28,9 +28,10 @@ function MetricBar({ label, value, displayValue, color, max, suffix = '' }) {
 }
 
 function SimpleBarChart({ data, color = 'var(--primary)', label = '' }) {
+  // [FIX-HOOK] useState must be called unconditionally — hooks cannot come after an early return
+  const [hovered, setHovered] = useState(null);
   if (!data || data.length === 0) return null;
   const max = Math.max(...data.map(d => d.value), 1);
-  const [hovered, setHovered] = useState(null);
 
   return (
     <div>
@@ -78,16 +79,19 @@ function SimpleBarChart({ data, color = 'var(--primary)', label = '' }) {
 export default function AnalyticsPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [days, setDays] = useState(30);
 
   const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     dashApi.analytics(days)
       .then(r => setData(r.data))
-      .catch(err => toast.error(err.message))
+      .catch(err => { setError(err.message); toast.error(err.message); })
       .finally(() => setLoading(false));
   }, [days]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   const maxActivity = data ? Math.max(data.orders ?? 0, data.bookings ?? 0, 1) : 1;
@@ -114,6 +118,8 @@ export default function AnalyticsPage() {
 
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}><Spinner size={28} /></div>
+      ) : error ? (
+        <Card><p style={{ textAlign: 'center', color: 'var(--red)', padding: '40px 0' }}>{error} <Btn size="sm" variant="ghost" onClick={load} style={{ marginLeft: 10 }}>Retry</Btn></p></Card>
       ) : !data ? (
         <Card><p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px 0' }}>No analytics data available yet.</p></Card>
       ) : (

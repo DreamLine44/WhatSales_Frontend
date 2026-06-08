@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Building2, Save } from 'lucide-react';
 import { bizApi, getModeConfig } from '../api.js';
-import { PageHeader, Card, Input, Textarea, Btn, Spinner } from '../components/ui.jsx';
+import { PageHeader, Card, Input, Btn, Spinner } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
 export default function BusinessInfoPage() {
@@ -29,8 +29,10 @@ export default function BusinessInfoPage() {
     if (!form.name?.trim()) { toast.error('Business name is required'); return; }
     setSaving(true);
     try {
-      // Step 3: PUT /business/:id — only send the keys we want to update
-      await bizApi.update({
+      // PATCH /dashboard/:id/settings — partial update, only sends the fields this page owns.
+      // Previously used PUT /business/:id which replaces the whole document and
+      // would silently drop any fields not included in this payload.
+      await bizApi.updateSettings({
         name:        form.name.trim(),
         description: form.description,
         adminPhone:  form.adminPhone,
@@ -56,13 +58,16 @@ export default function BusinessInfoPage() {
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
             placeholder="My Business"
           />
-          <Textarea
-            label="Description"
-            value={form.description}
-            onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-            rows={3}
-            placeholder="Tell customers what your business does…"
-          />
+          <div>
+            <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>Description</label>
+            <textarea
+              value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              rows={3} placeholder="Tell customers what your business does…"
+              style={{ width: '100%', padding: '10px 13px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.875rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.6 }}
+              onFocus={e => e.target.style.borderColor = 'var(--primary)'}
+              onBlur={e => e.target.style.borderColor = 'var(--border-mid)'}
+            />
+          </div>
           <Input
             label="Admin Phone (WhatsApp)"
             value={form.adminPhone}

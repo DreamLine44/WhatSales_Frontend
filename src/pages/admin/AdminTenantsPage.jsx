@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Users, Plus, Search, Trash2, Pencil, RefreshCw,
-  Wifi, WifiOff, CheckCircle2, X, Save, ShieldAlert,
+  Wifi, WifiOff, CheckCircle2, Save, ShieldAlert,
   Power, PowerOff, Copy, Check, ChevronDown, ChevronUp,
-  KeyRound, Hash, Building2, RotateCcw, Eye, EyeOff,
+  Hash, RotateCcw, Eye, EyeOff,
   AlertTriangle, Info,
 } from 'lucide-react';
 import { adminApi, BUSINESS_MODES, getModeConfig } from '../../api.js';
@@ -24,9 +24,10 @@ const STATUS_META = {
   SUSPENDED: { color: 'var(--red)',        desc: 'Suspended due to policy or payment issue.' },
 };
 
+// All modes supported by the backend BusinessConfig enum
 const SUPPORTED_MODES = BUSINESS_MODES.filter(m =>
   ['RESTAURANT','BAKERY','SALON','BARBERSHOP','COSMETICS','ELECTRONICS',
-   'FASHION','RETAIL','SUPERMARKET','PHARMACY','DELIVERY'].includes(m.value)
+   'FASHION','RETAIL','SUPERMARKET','PHARMACY','DELIVERY','SERVICES','GENERAL'].includes(m.value)
 );
 
 // ── Tiny copy button ──────────────────────────────────────────────────────────
@@ -148,12 +149,32 @@ function CreateTenantModal({ onClose, onCreate }) {
 
       const r = await adminApi.createTenant(payload);
 
-      // [FIX-CREATE-3] Normalise response shape: { tenant, apiKey } or { tenant: { apiKey } }
-      const tenant = r.data?.tenant || r.data;
-      const apiKey = r.data?.apiKey || r.data?.tenant?.apiKey || null;
+      // Backend returns: { tenant: { _id, name, status, apiKey }, business, next }
+      // apiKey lives inside tenant object — shown ONCE ONLY, never stored in DB
+      const serverTenant = r.data?.tenant || r.data;
+      const apiKey = r.data?.tenant?.apiKey || r.data?.apiKey || null;
 
-      setCreated({ tenant, apiKey });
-      onCreate(tenant);
+      // [FIX-CREATE-5] Build a rich tenant object so the newly-added row in the list
+      // has all fields (businessMode, adminPhone, email, plan, whatsapp, onboardingStep).
+      // The create endpoint only returns a minimal tenant object — supplement with form data.
+      const richTenant = {
+        ...serverTenant,
+        businessMode:   form.businessMode,
+        adminPhone:     form.adminPhone.trim() || undefined,
+        email:          form.email.trim()      || undefined,
+        plan:           'FREE',
+        onboardingStep: form.whatsapp.phoneNumberId.trim() ? 2 : 1,
+        createdAt:      new Date().toISOString(),
+        whatsapp: form.whatsapp.phoneNumberId.trim() ? {
+          phoneNumberId: form.whatsapp.phoneNumberId.trim(),
+          phone:         form.whatsapp.phone.trim()        || undefined,
+          verifyToken:   form.whatsapp.verifyToken.trim()  || undefined,
+          connected:     false,
+        } : {},
+      };
+
+      setCreated({ tenant: richTenant, apiKey, formWhatsapp: form.whatsapp });
+      onCreate(richTenant);
       toast.success(`Tenant "${form.name.trim()}" created`);
       setStep(3);
     } catch (err) {
@@ -166,7 +187,7 @@ function CreateTenantModal({ onClose, onCreate }) {
   const selectedMode = SUPPORTED_MODES.find(m => m.value === form.businessMode);
 
   return (
-    <Modal onClose={step === 3 ? undefined : onClose} maxWidth={520}>
+    <Modal onClose={step === 3 ? onClose : onClose} maxWidth={520}>
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1.1rem', marginBottom: 10 }}>
           {step < 3 ? 'Create Tenant' : '🎉 Tenant Created'}
@@ -279,8 +300,12 @@ function CreateTenantModal({ onClose, onCreate }) {
             )
           }
           <CopyField label="Business Name" value={created.tenant.name || ''} />
+          {/* [FIX-CREATE-6] richTenant.whatsapp is built from form data so these fields are always available */}
           {created.tenant.whatsapp?.phoneNumberId && (
             <CopyField label="Phone Number ID" value={created.tenant.whatsapp.phoneNumberId} />
+          )}
+          {created.tenant.whatsapp?.phone && (
+            <CopyField label="WhatsApp Number" value={created.tenant.whatsapp.phone} />
           )}
           <p style={{ fontSize: '0.77rem', color: 'var(--text-muted)', marginTop: 10, lineHeight: 1.5 }}>
             Status starts as <strong>PENDING</strong>. Open Edit → Status tab to activate this tenant.
@@ -301,7 +326,7 @@ function RegenKeyModal({ tenant, onClose, onKeyRegenerated }) {
     if (!confirmed) return;
     setLoading(true);
     try {
-      const r = await adminApi.regenApiKey(tenant._id);
+      const r = await adminApi.rotateApiKey(tenant._id);
       // [FIX-REGEN-1] Normalise both response shapes: { apiKey } or { tenant: { apiKey } }
       const key = r.data?.apiKey || r.data?.tenant?.apiKey || null;
       if (!key) {
@@ -394,18 +419,25 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
   });
   const [saving, setSaving]             = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
+  const [verifying, setVerifying]       = useState(false);
   const [showRegenKey, setShowRegenKey] = useState(false);
 
   const set   = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const setWA = (k, v) => setForm(f => ({ ...f, whatsapp: { ...f.whatsapp, [k]: v } }));
 
-  // [FIX-EDIT-2] applyUpdate must NOT call onUpdate inside setTenant's updater
-  // (that runs during render). Instead update local state and call onUpdate separately.
-  const applyUpdate = useCallback((patch) => {
-    const merged = { ...tenant, ...patch };
-    setTenant(merged);
-    onUpdate(merged);
-  }, [tenant, onUpdate]);
+  // [FIX-EDIT-2] applyUpdate accepts either a patch object or a function (prev => patch).
+  // Using setTenant's functional form ensures we always merge from the latest state,
+  // not from a stale closure snapshot — critical when saveWA and saveInfo can be
+  // called in quick succession.
+  const applyUpdate = useCallback((patchOrFn) => {
+    setTenant(prev => {
+      const patch = typeof patchOrFn === 'function' ? patchOrFn(prev) : patchOrFn;
+      const merged = { ...prev, ...patch };
+      // Schedule onUpdate outside the updater to avoid side-effects during render
+      setTimeout(() => onUpdate(merged), 0);
+      return merged;
+    });
+  }, [onUpdate]);
 
   const saveInfo = async () => {
     if (!form.name.trim()) { toast.error('Business name is required'); return; }
@@ -441,16 +473,22 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
     setSaving(true);
     try {
       const waPayload = { ...form.whatsapp };
-      // [FIX-EDIT-5] Don't send empty strings — they would overwrite existing hashed values
+      // [FIX-EDIT-5] Don't send empty strings — they would overwrite existing stored values.
+      // verifyToken is plaintext but still stored on the tenant; sending '' would break
+      // Meta webhook verification for this tenant.
       if (!waPayload.accessToken)   delete waPayload.accessToken;
       if (!waPayload.webhookSecret) delete waPayload.webhookSecret;
+      if (!waPayload.verifyToken)   delete waPayload.verifyToken;
 
       const r = await adminApi.updateTenant(tenant._id, { whatsapp: waPayload });
       const serverWA = r.data?.tenant?.whatsapp || {};
-      // [FIX-EDIT-6] Merge WhatsApp update: preserve existing fields, apply new ones
-      applyUpdate({
+      // [FIX-EDIT-6] Merge WhatsApp update using functional updater pattern inside applyUpdate.
+      // applyUpdate now uses setTenant(prev => ...) so `prev.whatsapp` is always fresh —
+      // this avoids the stale-closure bug where tenant.whatsapp captured at render time
+      // would clobber fields that were just written by a prior applyUpdate call.
+      applyUpdate(prev => ({
         whatsapp: {
-          ...tenant.whatsapp,
+          ...prev.whatsapp,
           ...waPayload,
           // Override with whatever the server returned (may include connected status, etc.)
           ...serverWA,
@@ -458,19 +496,15 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
           accessToken:   undefined,
           webhookSecret: undefined,
         },
-      });
+      }));
       toast.success('WhatsApp credentials saved');
       // Clear token fields to prevent accidental re-submission
       setWA('accessToken', '');
       setWA('webhookSecret', '');
 
-      // [FIX-WA-CONFIGURE] Tell the backend to re-initialise the WhatsApp client
-      // for this tenant immediately after credentials are saved, so the bot goes live
-      // without requiring a server restart. Errors here are non-fatal (warn only).
-      adminApi.configureWhatsApp(tenant._id).catch(e => {
-        console.warn('[WA configure]', e.message);
-        toast(`WhatsApp credentials saved, but bot initialisation may need a moment. Refresh the tenant status shortly.`, { icon: 'ℹ️', duration: 5000 });
-      });
+      // Credentials are saved. Use the "Verify WhatsApp" button (POST /admin/tenants/:id/verify-whatsapp)
+      // to call Meta's API and advance onboardingStep to 3 before activating the tenant.
+      toast('Credentials saved. Use "Verify WhatsApp" to confirm credentials with Meta before activating.', { icon: 'ℹ️', duration: 5000 });
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -478,9 +512,59 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
     }
   };
 
-  // [FIX-EDIT-7] Status update: correctly call /admin/tenants/:id/status and propagate both up and locally
+  // POST /admin/tenants/:id/verify-whatsapp
+  // Calls Meta API with stored credentials. Sets whatsapp.connected=true and onboardingStep=3 on success.
+  // Must be called AFTER saveWA (credentials must already be stored on the tenant).
+  const verifyWA = async () => {
+    setVerifying(true);
+    try {
+      const r = await adminApi.verifyWhatsApp(tenant._id);
+      const { displayPhoneNumber, verifiedName, onboardingStep } = r.data || {};
+      applyUpdate(prev => ({
+        onboardingStep: onboardingStep || 3,
+        whatsapp: { ...prev.whatsapp, connected: true },
+      }));
+      toast.success(`✅ Verified: ${verifiedName || 'Business'} (${displayPhoneNumber || tenant.whatsapp?.phone || ''})`);
+    } catch (err) {
+      toast.error(`Verification failed: ${err.message}`);
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  // Status update with pre-flight guards matching backend rules
   const updateStatus = async (newStatus) => {
     if (newStatus === tenant.status) return;
+
+    // Guard: SIM_ phoneNumberId blocks activation (backend returns 400)
+    if (newStatus === 'ACTIVE') {
+      const pid = tenant.whatsapp?.phoneNumberId || '';
+      if (pid.startsWith('SIM_')) {
+        toast.error('Cannot activate: remove the SIM_ placeholder Phone Number ID first. Set real credentials in the WhatsApp tab.');
+        return;
+      }
+      // Guard: onboardingStep < 3 means WhatsApp credentials haven't been verified yet.
+      // Backend will reject unless force:true is sent. Show a warning and ask for confirmation.
+      if ((tenant.onboardingStep ?? 0) < 3 && !tenant.whatsapp?.connected) {
+        const confirmed = window.confirm(
+          'WhatsApp credentials have not been verified yet (onboarding step < 3).\n\nActivating now will force-activate without verification — the bot may not respond until credentials are confirmed.\n\nContinue anyway?'
+        );
+        if (!confirmed) return;
+        // Send force:true so the backend accepts the out-of-order activation
+        setStatusSaving(true);
+        try {
+          await adminApi.updateStatus(tenant._id, newStatus, { force: true });
+          applyUpdate({ status: newStatus });
+          toast.success(`Status updated → ${newStatus} (forced)`);
+        } catch (err) {
+          toast.error(err.message);
+        } finally {
+          setStatusSaving(false);
+        }
+        return;
+      }
+    }
+
     setStatusSaving(true);
     try {
       await adminApi.updateStatus(tenant._id, newStatus);
@@ -502,8 +586,9 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
   });
 
   const apiBase    = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up.railway.app';
-  // [FIX-EDIT-8] Webhook URL is per-tenant — the route includes the tenant ID
-  const webhookUrl = `${apiBase}/webhook/${tenant._id}`;
+  // The webhook is a single shared Meta endpoint — /webhook (no tenant ID in path)
+  // Backend routes by phoneNumberId in the Meta payload, not by URL segment
+  const webhookUrl = `${apiBase}/webhook`;
 
   return (
     <>
@@ -638,9 +723,21 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
               ))}
             </Select>
 
-            <Btn onClick={saveWA} loading={saving} style={{ alignSelf: 'flex-start' }}>
-              <Wifi size={14} /> Save Credentials
-            </Btn>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <Btn onClick={saveWA} loading={saving} style={{ alignSelf: 'flex-start' }}>
+                <Wifi size={14} /> Save Credentials
+              </Btn>
+              <Btn
+                variant="ghost"
+                onClick={verifyWA}
+                loading={verifying}
+                disabled={!tenant.whatsapp?.phoneNumberId}
+                title={!tenant.whatsapp?.phoneNumberId ? 'Save phoneNumberId and accessToken first' : 'Call Meta API to verify credentials'}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                <CheckCircle2 size={14} /> Verify WhatsApp
+              </Btn>
+            </div>
 
             {/* [FIX-WA-3] Show the per-tenant webhook URL for Meta configuration */}
             <div style={{
@@ -667,20 +764,54 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
             <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.6 }}>
               Only <strong>ACTIVE</strong> tenants have a running bot. Click a status to apply it instantly.
             </p>
+
+            {/* Pre-flight warnings shown inline before user clicks */}
+            {(() => {
+              const pid = tenant.whatsapp?.phoneNumberId || '';
+              const step = tenant.onboardingStep ?? 0;
+              if (pid.startsWith('SIM_')) return (
+                <div style={{ background: 'var(--red-dim)', border: '1.5px solid rgba(220,38,38,0.25)', borderRadius: 'var(--r-md)', padding: '10px 14px', marginBottom: 14, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <AlertTriangle size={14} color="var(--red)" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span style={{ fontSize: '0.8rem', color: 'var(--red)', lineHeight: 1.5 }}>
+                    <strong>SIM_ placeholder credentials detected.</strong> Activation will be blocked by the server. Replace the Phone Number ID with a real Meta value in the WhatsApp tab first.
+                  </span>
+                </div>
+              );
+              if (step < 3 && !tenant.whatsapp?.connected) return (
+                <div style={{ background: 'var(--amber-dim)', border: '1.5px solid rgba(217,119,6,0.22)', borderRadius: 'var(--r-md)', padding: '10px 14px', marginBottom: 14, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <Info size={14} color="var(--amber)" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span style={{ fontSize: '0.8rem', color: 'var(--amber)', lineHeight: 1.5 }}>
+                    <strong>WhatsApp not yet verified</strong> (onboarding step {step}/3). Activating now requires <code>force: true</code> — you'll be asked to confirm. Use the WhatsApp tab → Verify WhatsApp first for a clean activation.
+                  </span>
+                </div>
+              );
+              if (tenant.whatsapp?.connected || step >= 3) return (
+                <div style={{ background: 'var(--primary-dim)', border: '1.5px solid var(--border-accent)', borderRadius: 'var(--r-md)', padding: '10px 14px', marginBottom: 14, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <CheckCircle2 size={14} color="var(--primary)" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span style={{ fontSize: '0.8rem', color: 'var(--primary)', lineHeight: 1.5 }}>
+                    WhatsApp credentials verified. Ready to activate.
+                  </span>
+                </div>
+              );
+              return null;
+            })()}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {STATUS_OPTIONS.map(s => {
                 const isCurrent = tenant.status === s;
                 const meta = STATUS_META[s] || {};
+                // Visually warn that ACTIVE may be blocked
+                const isBlockedBySimCredential = s === 'ACTIVE' && (tenant.whatsapp?.phoneNumberId || '').startsWith('SIM_');
                 return (
                   <button
                     key={s}
                     onClick={() => !isCurrent && !statusSaving && updateStatus(s)}
-                    disabled={statusSaving || isCurrent}
+                    disabled={statusSaving || isCurrent || isBlockedBySimCredential}
                     style={{
                       padding: '12px 16px',
-                      border: `1.5px solid ${isCurrent ? meta.color : 'var(--border-mid)'}`,
+                      border: `1.5px solid ${isBlockedBySimCredential ? 'var(--red)' : isCurrent ? meta.color : 'var(--border-mid)'}`,
                       borderRadius: 'var(--r-md)',
-                      cursor: isCurrent || statusSaving ? 'default' : 'pointer',
+                      cursor: isCurrent || statusSaving || isBlockedBySimCredential ? 'not-allowed' : 'pointer',
                       background: isCurrent ? `${meta.color}14` : 'var(--bg-surface)',
                       display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
                       textAlign: 'left', opacity: statusSaving && !isCurrent ? 0.5 : 1,
@@ -783,7 +914,7 @@ function TenantRow({ tenant, onUpdate, onDelete }) {
   const isSuspended = tenant.status === 'SUSPENDED';
   const modeConfig  = getModeConfig(tenant.businessMode);
 
-  // [FIX-ROW-2] Quick toggle: ACTIVE ↔ INACTIVE only.
+  // Quick toggle: ACTIVE ↔ INACTIVE only.
   // Suspended tenants must be changed via Edit → Status (prevents accidental unsuspend).
   const toggleActive = async () => {
     if (isSuspended) {
@@ -791,8 +922,39 @@ function TenantRow({ tenant, onUpdate, onDelete }) {
       return;
     }
     if (togglePending.current) return;
-    togglePending.current = true;
+
     const newStatus = isActive ? 'INACTIVE' : 'ACTIVE';
+
+    // Guard: SIM_ phoneNumberId blocks activation (backend returns 400)
+    if (newStatus === 'ACTIVE') {
+      const pid = tenant.whatsapp?.phoneNumberId || '';
+      if (pid.startsWith('SIM_')) {
+        toast.error('Cannot activate: SIM_ placeholder credentials detected. Set real Meta credentials first via Edit → WhatsApp.');
+        return;
+      }
+      // Guard: not yet verified — warn and allow with force:true
+      if ((tenant.onboardingStep ?? 0) < 3 && !tenant.whatsapp?.connected) {
+        const confirmed = window.confirm(
+          'WhatsApp credentials have not been verified yet (onboarding step < 3).\n\nForce-activate anyway? The bot may not respond until credentials are fully confirmed via Meta.'
+        );
+        if (!confirmed) return;
+        togglePending.current = true;
+        setTogglingStatus(true);
+        try {
+          await adminApi.updateStatus(tenant._id, newStatus, { force: true });
+          onUpdate({ ...tenant, status: newStatus });
+          toast.success(`${tenant.name} → ${newStatus} (forced)`);
+        } catch (err) {
+          toast.error(err.message);
+        } finally {
+          setTogglingStatus(false);
+          togglePending.current = false;
+        }
+        return;
+      }
+    }
+
+    togglePending.current = true;
     setTogglingStatus(true);
     try {
       await adminApi.updateStatus(tenant._id, newStatus);
@@ -1024,6 +1186,7 @@ export default function AdminTenantsPage() {
   }, []);
 
   // Initial load
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchTenants('', ''); }, [fetchTenants]);
 
   // [FIX-PAGE-2] Debounced search — 400ms after user stops typing
@@ -1089,10 +1252,7 @@ export default function AdminTenantsPage() {
               fontFamily: 'var(--font-body)', fontSize: '0.875rem',
               background: 'var(--bg-surface)', color: 'var(--text-primary)',
               outline: 'none', boxSizing: 'border-box',
-              transition: 'border-color 0.15s, box-shadow 0.15s',
             }}
-            onFocus={e => { e.target.style.borderColor = 'var(--primary)'; e.target.style.boxShadow = '0 0 0 3px var(--primary-dim)'; }}
-            onBlur={e => { e.target.style.borderColor = 'var(--border-mid)'; e.target.style.boxShadow = 'none'; }}
           />
         </div>
 

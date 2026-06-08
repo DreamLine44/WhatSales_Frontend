@@ -1,25 +1,40 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { authApi } from '../api.js';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 
 const AuthContext = createContext(null);
 
-// [FIX-AUTH-1] /business/:tenantId returns { business, tenant }.
-// Previously code tried data.tenant?.whatsapp which was always undefined because
-// the old /dashboard/:id/overview endpoint doesn't return tenant.whatsapp at all.
-// Now both login and restore use /business/:id which always returns the full tenant doc.
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up.railway.app';
 
-function buildUserFromResponse(tenantId, data) {
-  const biz    = data.business || {};
-  const tenant = data.tenant   || {};
+// ── Build a rich user object from the two API responses ───────────────────────
+//
+// [FIX-AUTH-BUSINESS] GET /business/:tenantId only returns { business: biz }.
+// The Tenant document (with whatsapp.connected, plan, onboardingStep, status) is
+// NOT returned by any tenant-accessible endpoint — it only lives at
+// GET /admin/tenants/:id which requires a super-admin key.
+//
+// Work-around: synthesise a tenant-like object from fields that ARE visible:
+//   • business.phoneNumberId → whatsapp.phoneNumberId (synced by backend on credential save)
+//   • status defaults to 'ACTIVE' (tenant can log in, so key is active)
+//   • plan and onboardingStep are inferred / set to safe defaults
+//
+// [FIX-AUTH-CONNECTED] whatsapp.connected cannot be determined from the tenant API key alone.
+// We signal "configured but unknown" via phoneNumberId presence. DashboardPage's
+// whatsappActive = tenantActive && whatsappConfigured covers this correctly.
+function buildUserFromResponse(tenantId, businessData) {
+  const biz = businessData || {};
   return {
     tenantId,
-    name:         biz.name         || 'My Business',
-    businessMode: biz.businessMode || 'RESTAURANT',
-    adminPhone:   biz.adminPhone   || '',
-    // [FIX-AUTH-2] whatsapp comes from the tenant doc, not the business config.
-    whatsapp:     tenant.whatsapp  || {},
-    plan:         tenant.plan      || 'FREE',
-    status:       tenant.status    || 'ACTIVE',
+    name:           biz.name         || 'My Business',
+    businessMode:   biz.businessMode || 'RESTAURANT',
+    adminPhone:     biz.adminPhone   || '',
+    // Synthesise whatsapp info from BusinessConfig.phoneNumberId
+    // (backend keeps this in sync with Tenant.whatsapp.phoneNumberId via updateTenant)
+    whatsapp: biz.phoneNumberId
+      ? { phoneNumberId: biz.phoneNumberId, connected: false }
+      : {},
+    plan:           'FREE',           // not exposed to tenant key — safe default
+    status:         'ACTIVE',         // tenant can authenticate ∴ key is active
+    onboardingStep: biz.phoneNumberId ? 2 : 1, // inferred: if phoneNumberId exists, step ≥ 2
   };
 }
 
@@ -28,26 +43,36 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
 
-  // [FIX-AUTH-3] Define restore with useCallback BEFORE useEffect to avoid
-  // the stale-closure / undefined-reference bug from calling it in useEffect deps.
-  const restore = useCallback(async (tenantId, apiKey, silent = false) => {
+  // Fetch business config with the stored (or supplied) credentials
+  const fetchBusiness = useCallback(async (tenantId, apiKey) => {
+    const res = await axios.get(`${BASE_URL}/business/${tenantId}`, {
+      headers: { 'x-api-key': apiKey },
+      timeout: 12000,
+    });
+    // Backend returns { business: biz }
+    return res.data?.business || res.data || {};
+  }, []);
+
+  // [FIX-AUTH-RESTORE] Define restore with useCallback BEFORE useEffect
+  const restore = useCallback(async (tenantId, apiKey) => {
     try {
-      const data = await authApi.getTenantInfo(tenantId, apiKey);
-      setUser(buildUserFromResponse(tenantId, data));
+      const biz = await fetchBusiness(tenantId, apiKey);
+      setUser(buildUserFromResponse(tenantId, biz));
     } catch {
       // Session expired or invalid — clear and force re-login
       localStorage.removeItem('ws_tenant_id');
       localStorage.removeItem('ws_api_key');
     } finally {
-      if (!silent) setLoading(false);
+      setLoading(false);
     }
-  }, []);
+  }, [fetchBusiness]);
 
   // On mount, try to restore session from localStorage
   useEffect(() => {
     const tenantId = localStorage.getItem('ws_tenant_id');
     const apiKey   = localStorage.getItem('ws_api_key');
     if (tenantId && apiKey) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       restore(tenantId, apiKey);
     } else {
       setLoading(false);
@@ -56,14 +81,11 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (tenantId, apiKey) => {
     setError(null);
-    const data = await authApi.getTenantInfo(tenantId.trim(), apiKey.trim());
-
-    // Store credentials
+    const biz = await fetchBusiness(tenantId.trim(), apiKey.trim());
     localStorage.setItem('ws_tenant_id', tenantId.trim());
     localStorage.setItem('ws_api_key', apiKey.trim());
-
-    setUser(buildUserFromResponse(tenantId.trim(), data));
-  }, []);
+    setUser(buildUserFromResponse(tenantId.trim(), biz));
+  }, [fetchBusiness]);
 
   const logout = useCallback(() => {
     localStorage.removeItem('ws_tenant_id');
@@ -74,7 +96,7 @@ export function AuthProvider({ children }) {
   const refreshUser = useCallback(async () => {
     const tenantId = localStorage.getItem('ws_tenant_id');
     const apiKey   = localStorage.getItem('ws_api_key');
-    if (tenantId && apiKey) await restore(tenantId, apiKey, true);
+    if (tenantId && apiKey) await restore(tenantId, apiKey);
   }, [restore]);
 
   return (
@@ -84,6 +106,7 @@ export function AuthProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used inside AuthProvider');

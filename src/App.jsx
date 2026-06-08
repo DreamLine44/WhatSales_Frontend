@@ -40,15 +40,18 @@ function RequireAuth({ children }) {
 }
 
 function RequireAdmin({ children }) {
-  const { isAdmin } = useAdmin();
+  const { isAdmin, validating } = useAdmin();
+  // [FIX-ADMIN-GUARD] Wait for mount-time session re-validation before redirecting.
+  // Without this check, a valid admin refreshing the page sees a flash-redirect to /login.
+  if (validating) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><Spinner size={36} /></div>;
   if (!isAdmin) return <Navigate to="/login" replace />;
   return children;
 }
 
 function RedirectIfLoggedIn({ children }) {
   const { user, loading } = useAuth();
-  const { isAdmin } = useAdmin();
-  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><Spinner size={36} /></div>;
+  const { isAdmin, validating } = useAdmin();
+  if (loading || validating) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><Spinner size={36} /></div>;
   if (isAdmin) return <Navigate to="/admin" replace />;
   if (user) return <Navigate to="/dashboard" replace />;
   return children;

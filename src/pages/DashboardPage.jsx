@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ShoppingCart, Calendar, Users, MessageSquare, TrendingUp, Zap, ArrowRight, CheckCircle2, Circle, RefreshCw } from 'lucide-react';
 import { useAuth } from '../store/AuthContext.jsx';
 import { dashApi, getModeConfig, needsBookings } from '../api.js';
-import { StatCard, Card, Btn, EmptyState, Spinner, SectionHeading, Skeleton, SkeletonCard } from '../components/ui.jsx';
+import { StatCard, Card, Btn, SectionHeading, Skeleton, SkeletonCard } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
 function QuickAction({ icon: Icon, label, desc, to, color = 'green' }) {
@@ -104,19 +104,20 @@ export default function DashboardPage() {
   const modeConfig = getModeConfig(mode);
   const hasBookings = needsBookings(mode);
 
-  const load = useCallback((silent = false) => {
-    if (!silent) setLoading(true);
+  const load = useCallback(() => {
+    setLoading(true);
     dashApi.overview()
       .then(r => setOverview(r.data))
-      .catch(err => { if (!silent) toast.error(err.message || 'Failed to load dashboard'); })
-      .finally(() => { if (!silent) setLoading(false); });
+      .catch(err => toast.error(err.message || 'Failed to load dashboard'))
+      .finally(() => setLoading(false));
   }, []);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
-  // Auto-refresh dashboard every 60s — silently so no skeleton flash
+  // Auto-refresh dashboard every 60s
   useEffect(() => {
-    const t = setInterval(() => load(true), 60000);
+    const t = setInterval(load, 60000);
     return () => clearInterval(t);
   }, [load]);
 

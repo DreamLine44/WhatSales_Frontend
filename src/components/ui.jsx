@@ -1,5 +1,5 @@
 // ── WhatSales UI Kit — v2 ─────────────────────────────────────────────────────
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Loader2, Copy, CheckCircle2, Eye, EyeOff, X, AlertTriangle, Search, TrendingUp, TrendingDown } from 'lucide-react';
 
 // ── Logo ──────────────────────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ export function Btn({ children, variant = 'primary', size = 'md', loading = fals
     outline: { background: 'transparent', color: 'var(--primary)', border: '1.5px solid var(--primary)' },
   };
   return (
-    <button type={props.type || 'button'} disabled={loading || props.disabled} style={{ ...base, ...sizes[size], ...variants[variant], ...style }} {...props}>
+    <button style={{ ...base, ...sizes[size], ...variants[variant], ...style }} {...props}>
       {loading && <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />}
       {children}
     </button>
@@ -300,7 +300,7 @@ export function StatusBadge({ status, style }) {
 // ── Page header ───────────────────────────────────────────────────────────────
 // Fully responsive: never clips or hides actions on small screens.
 // Title + icon row always on one line; actions wrap to next row on mobile.
-export function PageHeader({ title, subtitle, actions, icon: Icon, back }) {
+export function PageHeader({ title, subtitle, actions, icon: Icon }) {
   return (
     <div style={{ marginBottom: 24 }}>
       {/* Outer: row on desktop, column on very small screens */}
@@ -378,7 +378,7 @@ export function EmptyState({ icon: Icon, title, description, action }) {
 }
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
-export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend, trendLabel }) {
+export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend }) {
   const colors = {
     green:  { icon: 'rgba(21,128,61,0.1)',  text: '#15803d', border: 'rgba(21,128,61,0.18)' },
     amber:  { icon: 'rgba(180,83,9,0.1)',   text: '#b45309', border: 'rgba(180,83,9,0.18)' },
@@ -672,12 +672,13 @@ export function Pagination({ page, total, limit, onChange }) {
 // On mobile, scrolls horizontally so all controls are reachable without wrapping
 export function FilterBar({ children, style = {} }) {
   return (
-    <div className="ws-filterbar" style={{
+    <div style={{
       display: 'flex', gap: 8, alignItems: 'center',
       marginBottom: 16,
       overflowX: 'auto', overflowY: 'visible',
       WebkitOverflowScrolling: 'touch',
       scrollbarWidth: 'none',
+      // Extend slightly beyond padding for edge-to-edge feel on mobile
       ...style,
     }}>
       <style>{`.ws-filterbar::-webkit-scrollbar{display:none}`}</style>

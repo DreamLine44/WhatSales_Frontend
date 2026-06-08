@@ -3,8 +3,6 @@ import { ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Clock, Package, Dollar
 import { dashApi, orderApi } from '../api.js';
 import { PageHeader, Card, StatusBadge, Btn, EmptyState, Spinner, Select, FilterBar, InlineSelect, Pagination } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
-
-// Step 9: PATCH /admin/orders/:orderId/status
 // Valid statuses: pending | confirmed | completed | cancelled | payment_failed | rejected
 // Customers receive WhatsApp notifications on: confirmed, completed, cancelled, rejected
 const STATUS_OPTIONS = ['pending','confirmed','completed','cancelled','payment_failed','rejected'];
@@ -104,13 +102,10 @@ function OrderRow({ order, onUpdate }) {
             <div style={{ flex: 1, minWidth: 150 }}>
               <label style={{ fontSize: '0.79rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>Note (optional)</label>
               <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Add a note..."
-                style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.875rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box' }}
-                onFocus={e => e.target.style.borderColor = 'var(--primary)'}
-                onBlur={e => e.target.style.borderColor = 'var(--border-mid)'}
-              />
+                style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.875rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none' }} />
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              {(newStatus !== order.status || notes.trim().length > 0) && (
+              {(newStatus !== order.status || notes.trim()) && (
                 <Btn onClick={handleUpdate} loading={saving} size="sm">Save</Btn>
               )}
               <Btn variant="ghost" size="sm" onClick={() => setExpanded(false)}>Close</Btn>
@@ -125,6 +120,7 @@ function OrderRow({ order, onUpdate }) {
 export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -132,13 +128,15 @@ export default function OrdersPage() {
 
   const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     // GET /dashboard/:id/orders — list orders (dashboard read route)
     dashApi.orders({ status: statusFilter || undefined, page, limit: LIMIT })
       .then(r => { setOrders(r.data.orders || []); setTotal(r.data.total || 0); })
-      .catch(err => toast.error(err.message))
+      .catch(err => { setError(err.message); toast.error(err.message); })
       .finally(() => setLoading(false));
   }, [statusFilter, page]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   const pendingCount = orders.filter(o => o.status === 'pending').length;
@@ -179,6 +177,11 @@ export default function OrdersPage() {
 
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}><Spinner size={28} /></div>
+      ) : error ? (
+        <Card>
+          <EmptyState icon={ShoppingCart} title="Failed to load orders" description={error}
+            action={<Btn onClick={load}>Retry</Btn>} />
+        </Card>
       ) : orders.length === 0 ? (
         <Card>
           <EmptyState icon={ShoppingCart} title="No orders yet"

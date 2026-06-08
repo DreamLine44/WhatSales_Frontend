@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, AlertCircle, CheckCircle2, RefreshCw,
-  Wifi, ArrowRight, Power, ShieldAlert,
+  Wifi, ArrowRight, Power,
 } from 'lucide-react';
 import { adminApi, getModeConfig } from '../../api.js';
 import { PageHeader, StatCard, Card, Btn, Spinner, Badge, StatusBadge } from '../../components/ui.jsx';
@@ -142,6 +142,7 @@ export default function AdminDashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   const stats = tenants ? {

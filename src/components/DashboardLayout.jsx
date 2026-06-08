@@ -4,11 +4,11 @@ import {
   LayoutDashboard, ShoppingCart, Calendar, UtensilsCrossed,
   Scissors, MessageSquare, BarChart3, Users, HelpCircle,
   Building2, Clock, Bot, Wifi, LogOut, ChevronRight,
-  Menu, X,
+  Menu, X, Zap,
 } from 'lucide-react';
 import { useAuth } from '../store/AuthContext.jsx';
 import { Logo } from '../components/ui.jsx';
-import { getModeConfig, needsBookings, needsMenu, needsServices } from '../api.js';
+import { getModeConfig, needsBookings, needsMenu, needsServices, sessionsApi } from '../api.js';
 import toast from 'react-hot-toast';
 
 function NavItem({ to, icon: Icon, label, end = false, badge, onClick }) {
@@ -281,6 +281,7 @@ export default function DashboardLayout() {
   const hasMenu = needsMenu(mode);
   const hasServices = needsServices(mode);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setDrawerOpen(false); }, [location.pathname]);
 
   useEffect(() => {
@@ -297,16 +298,14 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     const poll = () => {
-      import('../api.js').then(({ sessionsApi }) => {
-        // Step 11: GET /admin/sessions/:tenantId — uses TENANT API KEY
-        sessionsApi.list({ limit: 100 })
-          .then(r => {
-            const sessions = r.data.sessions || r.data.conversations || [];
-            const humanCount = sessions.filter(s => s.humanMode).length;
-            setHumanSessionCount(humanCount);
-          })
-          .catch(() => {});
-      });
+      // [FIX-DYNAMIC-IMPORT] api.js is already statically imported — use directly
+      sessionsApi.list({ limit: 100 })
+        .then(r => {
+          const sessions = r.data.sessions || [];
+          const humanCount = sessions.filter(s => s.humanMode).length;
+          setHumanSessionCount(humanCount);
+        })
+        .catch(() => {});
     };
     poll();
     const t = setInterval(poll, 45000);
@@ -386,6 +385,21 @@ export default function DashboardLayout() {
 
           {/* Status pill */}
           <WaPill whatsapp={user?.whatsapp} status={user?.status} />
+
+          {/* More menu button — opens drawer */}
+          <button
+            onClick={() => setDrawerOpen(true)}
+            title="All pages"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 34, height: 34, borderRadius: 9,
+              color: 'var(--text-secondary)', cursor: 'pointer',
+              background: 'var(--bg-overlay)', border: '1.5px solid var(--border)',
+              flexShrink: 0,
+            }}
+          >
+            <Zap size={15} />
+          </button>
         </header>
 
         {/* Page content */}

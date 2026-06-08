@@ -57,8 +57,10 @@ export default function BotMessagesPage() {
   const save = async () => {
     setSaving(true);
     try {
-      // Step 3: PUT /business/:id — send only customMessages key
-      await bizApi.update({ customMessages: msgs });
+      // PATCH /dashboard/:id/settings — partial update, only sends the customMessages key.
+      // Previously used PUT /business/:id which replaces the whole document and
+      // would silently drop any fields not included in this payload.
+      await bizApi.updateSettings({ customMessages: msgs });
       toast.success('Bot messages saved');
     } catch (err) { toast.error(err.message); }
     finally { setSaving(false); }

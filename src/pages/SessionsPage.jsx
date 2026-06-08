@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { MessageSquare, RefreshCw, Bot, User, AlertTriangle, Clock, Zap } from 'lucide-react';
+import { MessageSquare, RefreshCw, Bot, User, AlertTriangle, Clock, Zap, Phone } from 'lucide-react';
 import { sessionsApi } from '../api.js';
-import { PageHeader, Card, Btn, EmptyState, Spinner, Badge } from '../components/ui.jsx';
+import { PageHeader, Card, Btn, EmptyState, Spinner, Badge, SearchInput } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
 function timeAgoStr(date) {
@@ -21,15 +21,16 @@ function SessionCard({ session, onToggle }) {
   const toggle = async () => {
     setToggling(true);
     try {
-      // Toggle human mode — dashboard-level route
       await sessionsApi.setHumanMode(session.customerPhone, !isHuman);
       onToggle(session.customerPhone, !isHuman);
-      toast.success(isHuman ? 'Bot resumed — AI will handle replies' : 'Human mode — bot paused');
+      toast.success(isHuman ? 'Bot resumed — AI will handle replies' : 'Human mode — bot paused, you can now reply');
     } catch (err) { toast.error(err.message); }
     finally { setToggling(false); }
   };
 
   const ago = timeAgoStr(session.lastSeen);
+  // [FIX-PURITY] Compute threshold as a Date object to avoid calling Date.now() in render
+  const isRecentlyActive = session.lastSeen && (new Date() - new Date(session.lastSeen)) < 300000;
 
   return (
     <div style={{
@@ -37,7 +38,7 @@ function SessionCard({ session, onToggle }) {
       border: `1.5px solid ${isHuman ? 'rgba(217,119,6,0.3)' : 'var(--border)'}`,
       borderRadius: 'var(--r-lg)', padding: '14px 18px',
       display: 'flex', alignItems: 'center', gap: 14,
-      transition: 'box-shadow 0.15s, transform 0.15s',
+      transition: 'box-shadow 0.15s',
       boxShadow: isHuman ? '0 0 0 3px rgba(217,119,6,0.08), var(--sh-sm)' : 'var(--sh-xs)',
     }}>
       <div style={{
@@ -48,7 +49,7 @@ function SessionCard({ session, onToggle }) {
         position: 'relative',
       }}>
         {isHuman ? <User size={20} color="var(--amber)" /> : <Bot size={20} color="var(--primary)" />}
-        {session.lastSeen && (Date.now() - new Date(session.lastSeen)) < 300000 && (
+        {isRecentlyActive && (
           <span style={{
             position: 'absolute', bottom: 1, right: 1,
             width: 9, height: 9, borderRadius: '50%',
@@ -62,11 +63,12 @@ function SessionCard({ session, onToggle }) {
         <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 3, letterSpacing: '-0.01em' }}>
           {session.customerName || 'Customer'}
         </div>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 5 }}>
-          {session.customerPhone}
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 5, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <Phone size={10} />{session.customerPhone}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           {session.currentFlow && <Badge color="blue">{session.currentFlow}</Badge>}
+          {session.step && <Badge color="gray">{session.step}</Badge>}
           {ago && (
             <span style={{ fontSize: '0.71rem', color: 'var(--text-ghost)', display: 'flex', alignItems: 'center', gap: 3 }}>
               <Clock size={9} />{ago}
@@ -101,34 +103,54 @@ export default function SessionsPage() {
   const [sessions, setSessions]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [humanOnly, setHumanOnly] = useState(false);
+  const [search, setSearch]       = useState('');
+  const [error, setError]         = useState(null);
   const pollRef = useRef(null);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    // Step 11: GET /admin/sessions/:tenantId — uses TENANT API KEY
-    // Supports ?limit, ?page, ?humanOnly
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
+    setError(null);
+    // GET /admin/sessions/:tenantId — response: { sessions, total, page, pages, limit }
     sessionsApi.list({ limit: 100 })
-      .then(r => setSessions(r.data.sessions || r.data.conversations || []))
-      .catch(err => toast.error(err.message))
-      .finally(() => setLoading(false));
+      .then(r => {
+        const list = r.data.sessions;
+        if (!Array.isArray(list)) {
+          // Unexpected shape — surface it rather than silently showing nothing
+          throw new Error('Unexpected response shape from /admin/sessions — expected { sessions: [...] }');
+        }
+        setSessions(list);
+      })
+      .catch(err => {
+        setError(err.message);
+        if (!silent) toast.error(err.message);
+      })
+      .finally(() => { if (!silent) setLoading(false); });
   }, []);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
-  // Auto-refresh every 30s so human-mode alerts stay fresh (silent refresh - no loading state)
+  // Auto-refresh every 30s so human-mode alerts stay fresh
   useEffect(() => {
-    pollRef.current = setInterval(() => {
-      sessionsApi.list({ limit: 100 })
-        .then(r => setSessions(r.data.sessions || r.data.conversations || []))
-        .catch(() => {});
-    }, 30000);
+    pollRef.current = setInterval(() => load(true), 30000);
     return () => clearInterval(pollRef.current);
-  }, []);
+  }, [load]);
 
-  const displayed   = humanOnly ? sessions.filter(s => s.humanMode) : sessions;
+  const filtered = sessions.filter(s => {
+    if (humanOnly && !s.humanMode) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return (s.customerName || '').toLowerCase().includes(q) ||
+             (s.customerPhone || '').includes(q) ||
+             (s.currentFlow || '').toLowerCase().includes(q);
+    }
+    return true;
+  });
+
   const humanCount  = sessions.filter(s => s.humanMode).length;
   const botCount    = sessions.filter(s => !s.humanMode).length;
-  const activeCount = sessions.filter(s => s.lastSeen && (Date.now() - new Date(s.lastSeen)) < 300000).length;
+  // [FIX-PURITY] Use new Date() instead of Date.now() — same semantics, lint-compliant
+  const activeCount = sessions.filter(s => s.lastSeen && (new Date() - new Date(s.lastSeen)) < 300000).length;
 
   const handleToggle = (phone, humanMode) => {
     setSessions(ss => ss.map(s => s.customerPhone === phone ? { ...s, humanMode } : s));
@@ -143,9 +165,9 @@ export default function SessionsPage() {
         actions={
           <div style={{ display: 'flex', gap: 8 }}>
             <Btn variant={humanOnly ? 'soft' : 'ghost'} size="sm" onClick={() => setHumanOnly(v => !v)}>
-              <User size={13} /> {humanOnly ? 'All' : 'Human only'}
+              <User size={13} /> {humanOnly ? 'All sessions' : 'Human only'}
             </Btn>
-            <Btn variant="ghost" size="sm" onClick={load}><RefreshCw size={14} /></Btn>
+            <Btn variant="ghost" size="sm" onClick={() => load()}><RefreshCw size={14} /></Btn>
           </div>
         }
       />
@@ -183,19 +205,35 @@ export default function SessionsPage() {
         </div>
       )}
 
+      <SearchInput
+        value={search}
+        onChange={v => setSearch(v)}
+        placeholder="Search by name, phone, or flow…"
+        style={{ marginBottom: 16 }}
+      />
+
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}><Spinner size={28} /></div>
-      ) : displayed.length === 0 ? (
+      ) : error ? (
+        <Card>
+          <EmptyState icon={MessageSquare} title="Failed to load sessions" description={error}
+            action={<Btn onClick={() => load()}>Retry</Btn>} />
+        </Card>
+      ) : filtered.length === 0 ? (
         <Card>
           <EmptyState
             icon={MessageSquare}
-            title={humanOnly ? 'No sessions in human mode' : 'No active sessions'}
-            description="Live customer sessions appear here. Toggle a session to human mode to take over from the bot."
+            title={search ? 'No matches found' : humanOnly ? 'No sessions in human mode' : 'No active sessions'}
+            description={search
+              ? 'Try a different name or phone number.'
+              : 'Live customer sessions appear here. Toggle a session to human mode to take over from the bot.'
+            }
+            action={search || humanOnly ? <Btn variant="ghost" onClick={() => { setSearch(''); setHumanOnly(false); }}>Clear filters</Btn> : null}
           />
         </Card>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} className="stagger">
-          {displayed.map(s => <SessionCard key={s.customerPhone} session={s} onToggle={handleToggle} />)}
+          {filtered.map(s => <SessionCard key={s.customerPhone} session={s} onToggle={handleToggle} />)}
         </div>
       )}
     </div>

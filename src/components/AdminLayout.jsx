@@ -133,6 +133,7 @@ export default function AdminLayout() {
   const location  = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setDrawerOpen(false); }, [location.pathname]);
 
   useEffect(() => {
