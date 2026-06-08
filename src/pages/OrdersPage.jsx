@@ -3,9 +3,9 @@ import { ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Clock, Package, Dollar
 import { dashApi, orderApi } from '../api.js';
 import { PageHeader, Card, StatusBadge, Btn, EmptyState, Spinner, Select, FilterBar, InlineSelect, Pagination } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
-// Valid statuses: pending | confirmed | completed | cancelled | payment_failed | rejected
+// Valid statuses: pending | payment_pending_verification | confirmed | completed | cancelled | payment_failed | rejected
 // Customers receive WhatsApp notifications on: confirmed, completed, cancelled, rejected
-const STATUS_OPTIONS = ['pending','confirmed','completed','cancelled','payment_failed','rejected'];
+const STATUS_OPTIONS = ['pending','payment_pending_verification','confirmed','completed','cancelled','payment_failed','rejected'];
 
 function OrderRow({ order, onUpdate }) {
   const [expanded, setExpanded] = useState(false);
@@ -126,18 +126,17 @@ export default function OrdersPage() {
   const [total, setTotal] = useState(0);
   const LIMIT = 20;
 
-  const load = useCallback(() => {
+  const load = useCallback((p, sf) => {
     setLoading(true);
     setError(null);
     // GET /dashboard/:id/orders — list orders (dashboard read route)
-    dashApi.orders({ status: statusFilter || undefined, page, limit: LIMIT })
+    dashApi.orders({ status: sf || undefined, page: p, limit: LIMIT })
       .then(r => { setOrders(r.data.orders || []); setTotal(r.data.total || 0); })
       .catch(err => { setError(err.message); toast.error(err.message); })
       .finally(() => setLoading(false));
-  }, [statusFilter, page]);
+  }, []);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(page, statusFilter); }, [page, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pendingCount = orders.filter(o => o.status === 'pending').length;
   const revenue = orders.filter(o => ['confirmed','completed'].includes(o.status)).reduce((s, o) => s + (o.totalPrice || 0), 0);
@@ -147,7 +146,7 @@ export default function OrdersPage() {
       <PageHeader
         icon={ShoppingCart} title="Orders"
         subtitle={`${total} total orders`}
-        actions={<Btn variant="ghost" size="sm" onClick={load}><RefreshCw size={14} /> Refresh</Btn>}
+        actions={<Btn variant="ghost" size="sm" onClick={() => load(page, statusFilter)}><RefreshCw size={14} /> Refresh</Btn>}
       />
 
       {!loading && orders.length > 0 && (
@@ -180,7 +179,7 @@ export default function OrdersPage() {
       ) : error ? (
         <Card>
           <EmptyState icon={ShoppingCart} title="Failed to load orders" description={error}
-            action={<Btn onClick={load}>Retry</Btn>} />
+            action={<Btn onClick={() => load(page, statusFilter)}>Retry</Btn>} />
         </Card>
       ) : orders.length === 0 ? (
         <Card>

@@ -1,6 +1,12 @@
-// ── WhatSales UI Kit — v2 ─────────────────────────────────────────────────────
+// ── WhatSales UI Kit — v3 ─────────────────────────────────────────────────────
 import { useState, useEffect } from 'react';
-import { Loader2, Copy, CheckCircle2, Eye, EyeOff, X, AlertTriangle, Search, TrendingUp, TrendingDown } from 'lucide-react';
+import { Loader2, Copy, CheckCircle2, Eye, EyeOff, X, AlertTriangle, Info, CheckCircle, AlertCircle, Search, TrendingUp, TrendingDown } from 'lucide-react';
+
+// ── Hover helper (inline-style hover without CSS classes) ─────────────────────
+function useHover() {
+  const [hovered, setHovered] = useState(false);
+  return [hovered, { onMouseEnter: () => setHovered(true), onMouseLeave: () => setHovered(false) }];
+}
 
 // ── Logo ──────────────────────────────────────────────────────────────────────
 export function Logo({ size = 32, light = false }) {
@@ -20,14 +26,32 @@ export function Logo({ size = 32, light = false }) {
 }
 
 // ── Button ────────────────────────────────────────────────────────────────────
-export function Btn({ children, variant = 'primary', size = 'md', loading = false, fullWidth = false, style = {}, ...props }) {
+// Hover is handled via CSS class `ws-btn` injected once into <head>.
+const _btnStyleInjected = { done: false };
+function injectBtnStyles() {
+  if (_btnStyleInjected.done || typeof document === 'undefined') return;
+  _btnStyleInjected.done = true;
+  const s = document.createElement('style');
+  s.textContent = `
+    .ws-btn { transition: filter 0.14s, box-shadow 0.14s, transform 0.12s; }
+    .ws-btn:not(:disabled):hover { filter: brightness(1.07); box-shadow: 0 2px 8px rgba(0,0,0,0.13); transform: translateY(-1px); }
+    .ws-btn:not(:disabled):active { transform: translateY(0); filter: brightness(0.97); box-shadow: none; }
+    .ws-btn:disabled { cursor: not-allowed !important; opacity: 0.55 !important; }
+    .ws-btn-ghost:not(:disabled):hover { background: var(--bg-overlay) !important; color: var(--text-primary) !important; }
+    .ws-btn-outline:not(:disabled):hover { background: var(--primary-dim) !important; }
+    .ws-btn-soft:not(:disabled):hover { background: var(--primary-mid) !important; }
+  `;
+  document.head.appendChild(s);
+}
+
+export function Btn({ children, variant = 'primary', size = 'md', loading = false, fullWidth = false, style = {}, className = '', ...props }) {
+  injectBtnStyles();
   const base = {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
     gap: 7, fontFamily: 'var(--font-body)', fontWeight: 600, cursor: 'pointer',
-    border: 'none', transition: 'all 0.15s', position: 'relative',
+    border: 'none', position: 'relative',
     borderRadius: 'var(--r-md)', whiteSpace: 'nowrap',
     width: fullWidth ? '100%' : undefined,
-    opacity: (loading || props.disabled) ? 0.65 : 1,
     letterSpacing: '-0.01em',
   };
   const sizes = {
@@ -37,15 +61,20 @@ export function Btn({ children, variant = 'primary', size = 'md', loading = fals
     lg: { padding: '13px 24px', fontSize: '0.95rem' },
   };
   const variants = {
-    primary: { background: 'var(--primary)', color: '#fff', boxShadow: '0 1px 3px rgba(10,122,60,0.3)' },
-    danger:  { background: 'var(--red)', color: '#fff', boxShadow: '0 1px 3px rgba(220,38,38,0.25)' },
+    primary: { background: 'var(--primary)', color: '#fff', boxShadow: '0 1px 3px rgba(10,122,60,0.3)', border: 'none' },
+    danger:  { background: 'var(--red)', color: '#fff', boxShadow: '0 1px 3px rgba(220,38,38,0.25)', border: 'none' },
     ghost:   { background: 'transparent', color: 'var(--text-secondary)', border: '1.5px solid var(--border-mid)' },
     soft:    { background: 'var(--primary-dim)', color: 'var(--primary)', border: '1.5px solid var(--border-accent)' },
-    amber:   { background: 'var(--amber)', color: '#fff', boxShadow: '0 1px 3px rgba(217,119,6,0.3)' },
+    amber:   { background: 'var(--amber)', color: '#fff', boxShadow: '0 1px 3px rgba(217,119,6,0.3)', border: 'none' },
     outline: { background: 'transparent', color: 'var(--primary)', border: '1.5px solid var(--primary)' },
   };
+  const variantClass = { ghost: 'ws-btn-ghost', outline: 'ws-btn-outline', soft: 'ws-btn-soft' }[variant] || '';
   return (
-    <button style={{ ...base, ...sizes[size], ...variants[variant], ...style }} {...props}>
+    <button
+      style={{ ...base, ...sizes[size], ...variants[variant], ...style }}
+      className={`ws-btn ${variantClass} ${className}`}
+      {...props}
+    >
       {loading && <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />}
       {children}
     </button>
@@ -72,6 +101,7 @@ export function Input({ label, hint, error, style = {}, wrapStyle = {}, ...props
           background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none',
           transition: 'border-color 0.15s, box-shadow 0.15s',
           boxShadow: focused ? '0 0 0 3px var(--primary-dim)' : 'none',
+          boxSizing: 'border-box',
           ...style,
         }}
         onFocus={e => { setFocused(true); props.onFocus?.(e); }}
@@ -116,7 +146,7 @@ export function SearchInput({ value, onChange, placeholder = 'Search…', onClea
           style={{
             position: 'absolute', right: 11, top: '50%', transform: 'translateY(-50%)',
             color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: 3,
-            borderRadius: 4, transition: 'color 0.12s',
+            borderRadius: 4, transition: 'color 0.12s', background: 'none', border: 'none',
           }}
         >
           <X size={13} />
@@ -197,9 +227,9 @@ export function Select({ label, hint, style = {}, children, ...props }) {
 }
 
 // ── Toggle ────────────────────────────────────────────────────────────────────
-export function Toggle({ checked, onChange, label, hint }) {
+export function Toggle({ checked, onChange, label, hint, disabled = false }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, opacity: disabled ? 0.55 : 1 }}>
       {(label || hint) && (
         <div>
           {label && <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>{label}</div>}
@@ -209,11 +239,14 @@ export function Toggle({ checked, onChange, label, hint }) {
       <button
         role="switch"
         aria-checked={checked}
-        onClick={() => onChange(!checked)}
+        title={checked ? 'Turn off' : 'Turn on'}
+        disabled={disabled}
+        onClick={() => !disabled && onChange(!checked)}
         style={{
-          width: 46, height: 26, borderRadius: 99, border: 'none', cursor: 'pointer', flexShrink: 0,
+          width: 46, height: 26, borderRadius: 99, border: 'none',
+          cursor: disabled ? 'not-allowed' : 'pointer', flexShrink: 0,
           background: checked ? 'var(--primary)' : 'var(--border-mid)',
-          transition: 'background 0.2s',
+          transition: 'background 0.2s, box-shadow 0.15s',
           position: 'relative',
           boxShadow: checked ? '0 0 0 3px var(--primary-dim)' : 'none',
         }}
@@ -231,7 +264,7 @@ export function Toggle({ checked, onChange, label, hint }) {
 
 // ── Card ──────────────────────────────────────────────────────────────────────
 export function Card({ children, style = {}, pad = true, hover = false, ...props }) {
-  const [hovered, setHovered] = useState(false);
+  const [hovered, hoverProps] = useHover();
   return (
     <div
       style={{
@@ -243,8 +276,7 @@ export function Card({ children, style = {}, pad = true, hover = false, ...props
         transition: hover ? 'box-shadow 0.15s, transform 0.15s' : 'none',
         ...style,
       }}
-      onMouseEnter={hover ? () => setHovered(true) : undefined}
-      onMouseLeave={hover ? () => setHovered(false) : undefined}
+      {...(hover ? hoverProps : {})}
       {...props}
     >
       {children}
@@ -253,21 +285,22 @@ export function Card({ children, style = {}, pad = true, hover = false, ...props
 }
 
 // ── Badge ─────────────────────────────────────────────────────────────────────
+// All colors use CSS variables — dark-mode safe.
 export function Badge({ color = 'green', children, dot = false, style = {} }) {
   const colors = {
-    green:  { bg: '#dcfce7', text: '#15803d' },
-    amber:  { bg: '#fef3c7', text: '#b45309' },
-    red:    { bg: '#fee2e2', text: '#dc2626' },
-    blue:   { bg: '#dbeafe', text: '#1d4ed8' },
-    purple: { bg: '#ede9fe', text: '#7c3aed' },
-    gray:   { bg: 'var(--bg-overlay)', text: 'var(--text-muted)' },
-    teal:   { bg: '#ccfbf1', text: '#0f766e' },
+    green:  { bg: 'var(--badge-green-bg)',  text: 'var(--badge-green-text)' },
+    amber:  { bg: 'var(--badge-amber-bg)',  text: 'var(--badge-amber-text)' },
+    red:    { bg: 'var(--badge-red-bg)',    text: 'var(--badge-red-text)' },
+    blue:   { bg: 'var(--badge-blue-bg)',   text: 'var(--badge-blue-text)' },
+    purple: { bg: 'var(--badge-purple-bg)', text: 'var(--badge-purple-text)' },
+    gray:   { bg: 'var(--bg-overlay)',      text: 'var(--text-muted)' },
+    teal:   { bg: 'var(--badge-teal-bg)',   text: 'var(--badge-teal-text)' },
   };
   const c = colors[color] || colors.gray;
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5,
-      fontSize: '0.7rem', fontWeight: 700, padding: '3px 8px',
+      fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px',
       borderRadius: 'var(--r-full)', background: c.bg, color: c.text,
       letterSpacing: '0.01em', ...style,
     }}>
@@ -298,21 +331,13 @@ export function StatusBadge({ status, style }) {
 }
 
 // ── Page header ───────────────────────────────────────────────────────────────
-// Fully responsive: never clips or hides actions on small screens.
-// Title + icon row always on one line; actions wrap to next row on mobile.
 export function PageHeader({ title, subtitle, actions, icon: Icon }) {
   return (
     <div style={{ marginBottom: 24 }}>
-      {/* Outer: row on desktop, column on very small screens */}
       <div style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        gap: 10,
-        flexWrap: 'wrap',
-        rowGap: 10,
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+        gap: 10, flexWrap: 'wrap', rowGap: 10,
       }}>
-        {/* Left: icon + title/subtitle */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0, flex: '1 1 0' }}>
           {Icon && (
             <div style={{
@@ -334,19 +359,12 @@ export function PageHeader({ title, subtitle, actions, icon: Icon }) {
               <p style={{
                 fontSize: '0.81rem', color: 'var(--text-muted)', marginTop: 2,
                 lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                maxWidth: '100%',
               }}>{subtitle}</p>
             )}
           </div>
         </div>
-
-        {/* Right: actions — always fully visible, wraps naturally */}
         {actions && (
-          <div style={{
-            display: 'flex', gap: 7, alignItems: 'center',
-            flexWrap: 'wrap',
-            flexShrink: 0,
-          }}>
+          <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
             {actions}
           </div>
         )}
@@ -389,7 +407,7 @@ export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend
     gray:   { icon: 'var(--bg-overlay)', text: 'var(--text-muted)', border: 'var(--border)' },
   };
   const c = colors[color] || colors.green;
-  const [hovered, setHovered] = useState(false);
+  const [hovered, hoverProps] = useHover();
 
   return (
     <div style={{
@@ -401,8 +419,7 @@ export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend
       transform: hovered ? 'translateY(-1px)' : 'none',
       cursor: 'default',
     }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      {...hoverProps}
     >
       {Icon && (
         <div style={{
@@ -414,14 +431,15 @@ export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend
         </div>
       )}
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-ghost)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{label}</div>
+        {/* FIX: label bumped from 0.69rem → 0.73rem, contrast improved */}
+        <div style={{ fontSize: '0.73rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>{label}</div>
         <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', letterSpacing: '-0.04em', lineHeight: 1 }}>
           {typeof value === 'string' && value.includes(' ')
             ? <><span style={{ fontSize: '1.05rem', fontWeight: 700, opacity: 0.55 }}>{value.split(' ')[0]}</span>{' '}{value.split(' ')[1]}</>
             : (value ?? '—')}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
-          {sub && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{sub}</div>}
+          {sub && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{sub}</div>}
           {trend != null && (
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 2,
@@ -447,9 +465,7 @@ export function Spinner({ size = 24, color = 'var(--primary)' }) {
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 export function Skeleton({ width = '100%', height = 16, style = {} }) {
-  return (
-    <div className="skeleton" style={{ width, height, ...style }} />
-  );
+  return <div className="skeleton" style={{ width, height, ...style }} />;
 }
 
 export function SkeletonCard({ lines = 3 }) {
@@ -485,32 +501,28 @@ export function Modal({ children, onClose, maxWidth = 540, title }) {
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 1000,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: '16px 12px',
-      paddingTop: 'max(16px, env(safe-area-inset-top, 16px))',
-      background: 'rgba(4,46,20,0.45)', backdropFilter: 'blur(6px)',
       overflowY: 'auto',
+      background: 'rgba(4,46,20,0.45)', backdropFilter: 'blur(6px)',
+      // FIX: responsive padding — tighter on mobile
+      padding: 'max(12px, env(safe-area-inset-top, 12px)) 12px max(12px, env(safe-area-inset-bottom, 12px))',
+      display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
     }}>
       <div style={{ position: 'fixed', inset: 0, zIndex: -1 }} onClick={onClose} />
       <div style={{
         position: 'relative', width: '100%', maxWidth,
         background: 'var(--bg-surface)', borderRadius: 'var(--r-xl)',
-        padding: title ? '0' : '26px 24px',
+        padding: title ? '0' : 'clamp(16px, 4vw, 26px)',
         boxShadow: 'var(--sh-xl)',
         border: '1.5px solid var(--border)',
-        maxHeight: 'calc(100vh - 32px)',
-        overflowY: 'auto',
         animation: 'bounceIn 0.22s ease',
         flexShrink: 0,
-        alignSelf: 'flex-start',
-        marginTop: 'auto',
-        marginBottom: 'auto',
+        margin: 'auto',
       }}>
         {title && (
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '18px 24px', borderBottom: '1.5px solid var(--border)',
-            position: 'sticky', top: 0, background: 'var(--bg-surface)', zIndex: 1,
+            padding: 'clamp(14px, 3vw, 18px) clamp(16px, 4vw, 24px)',
+            borderBottom: '1.5px solid var(--border)',
             borderRadius: 'var(--r-xl) var(--r-xl) 0 0',
           }}>
             <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', letterSpacing: '-0.02em' }}>{title}</h3>
@@ -526,7 +538,8 @@ export function Modal({ children, onClose, maxWidth = 540, title }) {
             </button>
           </div>
         )}
-        <div style={{ padding: title ? '24px' : 0 }}>
+        {/* FIX: responsive inner padding */}
+        <div style={{ padding: title ? 'clamp(16px, 4vw, 24px)' : 0 }}>
           {children}
         </div>
       </div>
@@ -557,6 +570,7 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, message, confir
 export function CopyField({ label, value, secret = false }) {
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [hovered, hoverProps] = useHover();
   const copy = () => {
     navigator.clipboard.writeText(value).catch(() => {});
     setCopied(true); setTimeout(() => setCopied(false), 2000);
@@ -566,24 +580,27 @@ export function CopyField({ label, value, secret = false }) {
       {label && (
         <div style={{ fontSize: '0.71rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>{label}</div>
       )}
+      {/* FIX: hover highlights the row */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        background: 'var(--bg-overlay)', border: '1.5px solid var(--border)',
+        background: hovered ? 'var(--bg-sunken)' : 'var(--bg-overlay)',
+        border: `1.5px solid ${hovered ? 'var(--border-mid)' : 'var(--border)'}`,
         borderRadius: 'var(--r-md)', padding: '9px 12px',
-        transition: 'border-color 0.15s',
-      }}>
+        transition: 'background 0.15s, border-color 0.15s',
+        cursor: 'text',
+      }} {...hoverProps}>
         <span style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: 'var(--text-primary)', wordBreak: 'break-all', lineHeight: 1.5 }}>
           {secret && !visible ? '•'.repeat(20) : value}
         </span>
         {secret && (
-          <button onClick={() => setVisible(v => !v)} style={{ color: 'var(--text-muted)', display: 'flex', cursor: 'pointer', flexShrink: 0, padding: 2 }}>
+          <button onClick={() => setVisible(v => !v)} title={visible ? 'Hide' : 'Reveal'} style={{ color: 'var(--text-muted)', display: 'flex', cursor: 'pointer', flexShrink: 0, padding: 2, background: 'none', border: 'none' }}>
             {visible ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
         )}
         <button onClick={copy} title={copied ? 'Copied!' : 'Copy'} style={{
           color: copied ? 'var(--primary)' : 'var(--text-muted)',
           display: 'flex', cursor: 'pointer', flexShrink: 0, padding: 2,
-          transition: 'color 0.15s',
+          transition: 'color 0.15s', background: 'none', border: 'none',
         }}>
           {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
         </button>
@@ -603,34 +620,40 @@ export function SectionHeading({ children, action }) {
 }
 
 // ── Info banner ───────────────────────────────────────────────────────────────
-export function InfoBanner({ type = 'info', children, style = {} }) {
+// FIX: now includes a left icon automatically, matching the type.
+export function InfoBanner({ type = 'info', children, style = {}, icon: CustomIcon }) {
   const types = {
-    info:    { bg: 'var(--blue-dim)',   border: 'rgba(37,99,235,0.2)',    color: 'var(--blue)' },
-    warning: { bg: 'var(--amber-dim)',  border: 'rgba(217,119,6,0.2)',    color: 'var(--amber)' },
-    error:   { bg: 'var(--red-dim)',    border: 'rgba(220,38,38,0.2)',    color: 'var(--red)' },
-    success: { bg: 'var(--primary-dim)',border: 'var(--border-accent)',   color: 'var(--primary)' },
+    info:    { bg: 'var(--blue-dim)',    border: 'rgba(37,99,235,0.2)',   color: 'var(--blue)',    Icon: Info },
+    warning: { bg: 'var(--amber-dim)',   border: 'rgba(217,119,6,0.2)',   color: 'var(--amber)',   Icon: AlertTriangle },
+    error:   { bg: 'var(--red-dim)',     border: 'rgba(220,38,38,0.2)',   color: 'var(--red)',     Icon: AlertCircle },
+    success: { bg: 'var(--primary-dim)', border: 'var(--border-accent)',  color: 'var(--primary)', Icon: CheckCircle },
   };
   const t = types[type] || types.info;
+  const IconComp = CustomIcon || t.Icon;
   return (
     <div style={{
-      padding: '12px 14px', borderRadius: 'var(--r-md)',
+      padding: '11px 14px', borderRadius: 'var(--r-md)',
       background: t.bg, border: `1.5px solid ${t.border}`,
       fontSize: '0.845rem', color: t.color, lineHeight: 1.55,
+      display: 'flex', alignItems: 'flex-start', gap: 9,
       ...style,
     }}>
-      {children}
+      <IconComp size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+      <span>{children}</span>
     </div>
   );
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
+// FIX: removed width:fit-content so tabs flow naturally on mobile.
 export function Tabs({ tabs, active, onChange }) {
   return (
     <div style={{
       display: 'flex', gap: 2, padding: '4px',
       background: 'var(--bg-overlay)', borderRadius: 'var(--r-md)',
-      border: '1.5px solid var(--border)', width: 'fit-content',
-      flexWrap: 'wrap',
+      border: '1.5px solid var(--border)',
+      flexWrap: 'wrap',       // FIX: wraps on narrow screens instead of clipping
+      overflowX: 'auto',
     }}>
       {tabs.map(tab => (
         <button
@@ -642,6 +665,7 @@ export function Tabs({ tabs, active, onChange }) {
             background: active === tab.value ? 'var(--bg-surface)' : 'transparent',
             color: active === tab.value ? 'var(--primary)' : 'var(--text-muted)',
             boxShadow: active === tab.value ? 'var(--sh-xs)' : 'none',
+            flexShrink: 0,
           }}
         >
           {tab.label}
@@ -671,7 +695,6 @@ export function Pagination({ page, total, limit, onChange }) {
 }
 
 // ── Filter bar ────────────────────────────────────────────────────────────────
-// On mobile, scrolls horizontally so all controls are reachable without wrapping
 export function FilterBar({ children, style = {} }) {
   return (
     <div style={{
@@ -680,7 +703,6 @@ export function FilterBar({ children, style = {} }) {
       overflowX: 'auto', overflowY: 'visible',
       WebkitOverflowScrolling: 'touch',
       scrollbarWidth: 'none',
-      // Extend slightly beyond padding for edge-to-edge feel on mobile
       ...style,
     }}>
       <style>{`.ws-filterbar::-webkit-scrollbar{display:none}`}</style>

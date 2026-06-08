@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Calendar, RefreshCw, ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import { dashApi, bookingApi } from '../api.js';
-import { PageHeader, Card, StatusBadge, Btn, EmptyState, Spinner, Select, Pagination } from '../components/ui.jsx';
+import { PageHeader, Card, StatusBadge, Btn, EmptyState, Spinner, Select, Pagination, FilterBar, InlineSelect } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
 // Step 10: PATCH /admin/bookings/:bookingId/status
@@ -83,7 +83,10 @@ function BookingRow({ booking, onUpdate }) {
                 placeholder='e.g. "Table 4 reserved for you, ground floor."'
                 style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.875rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none' }} />
             </div>
-            <Btn onClick={handleUpdate} loading={saving} size="sm">Save</Btn>
+            {(newStatus !== booking.status || adminNote.trim()) && (
+              <Btn onClick={handleUpdate} loading={saving} size="sm">Save</Btn>
+            )}
+            <Btn variant="ghost" size="sm" onClick={() => setExpanded(false)}>Close</Btn>
           </div>
         </div>
       )}
@@ -100,44 +103,36 @@ function BookingsPage() {
   const [page, setPage] = useState(1);
   const LIMIT = 20;
 
-  const load = useCallback(() => {
+  const load = useCallback((p, sf) => {
     setLoading(true);
     setError(null);
     // GET /dashboard/:id/bookings — list bookings (dashboard read route)
-    dashApi.bookings({ status: statusFilter || undefined, page, limit: LIMIT })
+    dashApi.bookings({ status: sf || undefined, page: p, limit: LIMIT })
       .then(r => { setBookings(r.data.bookings || []); setTotal(r.data.total || 0); })
       .catch(err => { setError(err.message); toast.error(err.message); })
       .finally(() => setLoading(false));
-  }, [statusFilter, page]);
+  }, []);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(page, statusFilter); }, [page, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="fade-in">
       <PageHeader icon={Calendar} title="Bookings" subtitle={`${total} bookings`}
-        actions={
-          <div style={{ display: 'flex', gap: 8 }}>
-            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
-              style={{
-                padding: '8px 30px 8px 12px', border: '1.5px solid var(--border-mid)',
-                borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.815rem',
-                background: 'var(--bg-surface)', cursor: 'pointer', outline: 'none', appearance: 'none',
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23627065' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center',
-              }}>
-              <option value="">All statuses</option>
-              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <Btn variant="ghost" size="sm" onClick={load}><RefreshCw size={14} /></Btn>
-          </div>
-        }
+        actions={<Btn variant="ghost" size="sm" onClick={() => load(page, statusFilter)}><RefreshCw size={14} /></Btn>}
       />
+
+      <FilterBar>
+        <InlineSelect value={statusFilter} onChange={v => { setStatusFilter(v); setPage(1); }}>
+          <option value="">All statuses</option>
+          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+        </InlineSelect>
+      </FilterBar>
+
       {loading
         ? <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}><Spinner size={28} /></div>
         : error
           ? <Card><EmptyState icon={Calendar} title="Failed to load bookings" description={error}
-              action={<Btn onClick={load}>Retry</Btn>} /></Card>
+              action={<Btn onClick={() => load(page, statusFilter)}>Retry</Btn>} /></Card>
           : bookings.length === 0
             ? <Card><EmptyState icon={Calendar} title="No bookings yet" description="Bookings will appear here when customers schedule appointments via WhatsApp." /></Card>
             : <>

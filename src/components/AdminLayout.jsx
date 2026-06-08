@@ -5,7 +5,7 @@ import {
   Menu, X, ChevronRight,
 } from 'lucide-react';
 import { useAdmin } from '../store/AdminContext.jsx';
-import { Logo } from '../components/ui.jsx';
+import { Logo } from './ui.jsx';
 import toast from 'react-hot-toast';
 
 const NAV_ITEMS = [
@@ -29,9 +29,13 @@ function NavItem({ to, icon: Icon, label, end, onClick }) {
         boxShadow: isActive ? '0 1px 6px rgba(0,0,0,0.18)' : 'none',
       })}
     >
-      <Icon size={16} style={{ flexShrink: 0 }} />
-      <span style={{ flex: 1 }}>{label}</span>
-      <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.35 }} />
+      {({ isActive }) => (
+        <>
+          <Icon size={16} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>{label}</span>
+          {isActive && <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5, flexShrink: 0 }} />}
+        </>
+      )}
     </NavLink>
   );
 }

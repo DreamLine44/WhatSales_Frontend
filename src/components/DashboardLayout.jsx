@@ -7,7 +7,7 @@ import {
   Menu, X, Zap,
 } from 'lucide-react';
 import { useAuth } from '../store/AuthContext.jsx';
-import { Logo } from '../components/ui.jsx';
+import { Logo } from './ui.jsx';
 import { getModeConfig, needsBookings, needsMenu, needsServices, sessionsApi } from '../api.js';
 import toast from 'react-hot-toast';
 
@@ -50,7 +50,7 @@ function NavSection({ label, children }) {
   return (
     <div style={{ marginBottom: 18 }}>
       <div style={{
-        fontSize: '0.59rem', fontWeight: 800, color: 'rgba(255,255,255,0.25)',
+        fontSize: '0.67rem', fontWeight: 800, color: 'rgba(255,255,255,0.32)',
         textTransform: 'uppercase', letterSpacing: '0.13em',
         padding: '0 11px', marginBottom: 4,
       }}>{label}</div>
@@ -159,7 +159,7 @@ function SidebarContent({ user, modeConfig, hasBookings, hasMenu, hasServices, o
           {hasServices && <NavItem to="/setup/services" icon={Scissors}        label="Services"        onClick={onClose} />}
           <NavItem to="/setup/hours"    icon={Clock}    label="Opening Hours" onClick={onClose} />
           <NavItem to="/setup/bot"      icon={Bot}      label="Bot Messages"  onClick={onClose} />
-          <NavItem to="/setup/whatsapp" icon={Wifi}     label="WhatsApp"      onClick={onClose} />
+          <NavItem to="/setup/whatsapp" icon={Wifi}     label="WhatsApp Status" onClick={onClose} />
         </NavSection>
       </nav>
 
@@ -257,8 +257,8 @@ function BottomNav({ hasBookings, humanSessionCount }) {
             <span>{label}</span>
             {isActive && (
               <span style={{
-                position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-                width: 24, height: 3, borderRadius: '0 0 3px 3px',
+                position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)',
+                width: 18, height: 3, borderRadius: 99,
                 background: 'var(--primary)',
               }} />
             )}
@@ -308,7 +308,9 @@ export default function DashboardLayout() {
         .catch(() => {});
     };
     poll();
-    const t = setInterval(poll, 45000);
+    // 90s — sidebar badge is a low-priority ambient indicator; halved from 45s to reduce
+    // concurrent load on /admin/sessions alongside SessionsPage's own 60s poller.
+    const t = setInterval(poll, 90000);
     return () => clearInterval(t);
   }, []);
 
@@ -357,6 +359,7 @@ export default function DashboardLayout() {
           {/* Hamburger */}
           <button
             onClick={() => setDrawerOpen(true)}
+            aria-label="Open navigation menu"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: 36, height: 36, borderRadius: 9,

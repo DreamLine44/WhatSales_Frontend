@@ -96,12 +96,14 @@ export default function CustomersPage() {
   const [search, setSearch]       = useState('');
   const [error, setError]         = useState(null);
   const searchTimer = useRef(null);
+  // Prevents the page-change effect from double-loading when the debounce handler
+  // calls setPage(1) and load(1, val) in the same tick.
+  const skipEffectRef = useRef(false);
   const LIMIT = 30;
 
   const load = useCallback((p, q) => {
     setLoading(true);
     setError(null);
-    // Customer search: pass ?search= if the API supports it, otherwise filter client-side
     const params = { page: p, limit: LIMIT };
     if (q?.trim()) params.search = q.trim();
     dashApi.customers(params)
@@ -116,26 +118,23 @@ export default function CustomersPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(page, search); }, [load, page]); // eslint-disable-line
+  useEffect(() => {
+    if (skipEffectRef.current) { skipEffectRef.current = false; return; }
+    load(page, search);
+  }, [load, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounce search — 400ms after user stops typing; reset to page 1
   const handleSearch = (val) => {
     setSearch(val);
     clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => {
+      // Skip the effect that setPage(1) would trigger — we're calling load directly
+      skipEffectRef.current = true;
       setPage(1);
       load(1, val);
     }, 400);
   };
 
-  // Client-side filter as fallback for APIs that ignore ?search=
-  const displayed = search.trim()
-    ? customers.filter(c => {
-        const q = search.toLowerCase();
-        return (c.name || c.customerName || '').toLowerCase().includes(q) ||
-               (c.phone || c.customerPhone || '').includes(q);
-      })
-    : customers;
 
   return (
     <div className="fade-in">
@@ -152,7 +151,7 @@ export default function CustomersPage() {
 
       {search && !loading && (
         <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 10 }}>
-          {displayed.length} result{displayed.length !== 1 ? 's' : ''} for "{search}"
+          {total} result{total !== 1 ? 's' : ''} for "{search}"
         </p>
       )}
 
@@ -163,7 +162,7 @@ export default function CustomersPage() {
           <EmptyState icon={Users} title="Failed to load customers" description={error}
             action={<Btn onClick={() => load(page, search)}>Retry</Btn>} />
         </Card>
-      ) : displayed.length === 0 ? (
+      ) : customers.length === 0 ? (
         <Card>
           <EmptyState icon={Users}
             title={search ? 'No matches found' : 'No customers yet'}
@@ -174,9 +173,9 @@ export default function CustomersPage() {
       ) : (
         <>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} className="stagger">
-            {displayed.map((c, i) => <CustomerCard key={c._id || i} customer={c} />)}
+            {customers.map((c, i) => <CustomerCard key={c._id || i} customer={c} />)}
           </div>
-          {!search && <Pagination page={page} total={total} limit={LIMIT} onChange={setPage} />}
+          <Pagination page={page} total={total} limit={LIMIT} onChange={setPage} />
         </>
       )}
     </div>

@@ -19,19 +19,34 @@ const SETUP_STEPS = [
 // ⚠ whatsapp.connected is only in the Tenant doc (not BusinessConfig) and is NOT
 //   returned by any tenant-accessible endpoint. We infer status from phoneNumberId.
 // Priority: live business.phoneNumberId from fresh /business fetch > cached user object.
+//
+// Step index map:
+//   0 = Account Created (always done once logged in)
+//   1 = Setup Request Submitted
+//   2 = Admin Processing
+//   3 = OTP Verification
+//   4 = WhatsApp Connected
+//   5 = Bot Activated  ← terminal "all done" state
+//
+// [FIX-2] ACTIVE + phoneNumberId = step 5 (Bot Activated), not step 4 (OTP Verification).
+// Previously returned 4 which put the spinner on the OTP step for a live tenant.
+// onboardingStep >= 3 (verified) + ACTIVE = also step 5.
 function getStepIndex(wa, tenantStatus, onboardingStep) {
   if (!wa) return 0;
-  // If the backend ever adds a connected field to BusinessConfig, honour it:
+  // connected=true is set by AuthContext when onboardingStep≥3 is inferred, or by
+  // buildUserFromResponse carrying it forward from a prior session. Treat as terminal.
   if (wa.connected === true) return 5;
-  // Use authoritative onboardingStep when it's a real number (> 1 = admin-managed)
+  // Use authoritative onboardingStep when it's a real number (> 1 = admin-managed).
   if (typeof onboardingStep === 'number' && onboardingStep > 1) {
-    if (onboardingStep >= 4) return 4;
-    if (onboardingStep === 3) return 3;
+    // Step 3 = verified by Meta; if tenant is also ACTIVE, the bot is live.
+    if (onboardingStep >= 3 && tenantStatus === 'ACTIVE') return 5;
+    if (onboardingStep >= 3) return 4; // verified but not yet activated
     if (onboardingStep === 2) return 2;
     return 1;
   }
-  // Fallback inference from fields we can actually read:
-  if (tenantStatus === 'ACTIVE' && wa.phoneNumberId) return 4;
+  // Fallback inference from fields we can actually read.
+  // ACTIVE + phoneNumberId = bot is live (step 5), not just OTP pending (step 4).
+  if (tenantStatus === 'ACTIVE' && wa.phoneNumberId) return 5;
   if (wa.phoneNumberId) return 2;
   return 1;
 }
@@ -90,9 +105,18 @@ export default function WhatsAppPage() {
       .finally(() => setBizLoading(false));
   }, []);
 
-  // Prefer live data over cached user object for WhatsApp fields
+  // Prefer live data over cached user object for WhatsApp fields.
+  // [FIX-3] Preserve connected flag — carry it from liveBiz if present, or fall back to
+  // user.whatsapp.connected (which AuthContext sets when onboardingStep≥3 is inferred).
   const wa = liveBiz
-    ? (liveBiz.phoneNumberId ? { phoneNumberId: liveBiz.phoneNumberId } : {})
+    ? (liveBiz.phoneNumberId
+        ? {
+            phoneNumberId: liveBiz.phoneNumberId,
+            phone:         liveBiz.phone         || undefined,
+            // liveBiz.connected would be set if backend ever exposes it; fall back to cached value
+            connected:     liveBiz.connected === true || user?.whatsapp?.connected === true,
+          }
+        : {})
     : (user?.whatsapp || {});
 
   const tenantStatus   = user?.status || 'ACTIVE';
@@ -117,7 +141,6 @@ export default function WhatsAppPage() {
 
   const isConnected = wa.connected === true || stepIdx >= 5;
   const isConfigured = !!(wa.phoneNumberId);
-  const webHookBase = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up.railway.app';
 
   return (
     <div className="fade-in">
@@ -220,24 +243,6 @@ export default function WhatsAppPage() {
               </div>
             )}
           </Card>
-
-          {/* Webhook info (only shown when configured) */}
-          {isConfigured && (
-            <Card>
-              <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', letterSpacing: '-0.02em', marginBottom: 4 }}>
-                Webhook Configuration
-              </h2>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 14 }}>
-                These are already configured by our team. For reference only.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>Webhook URL</div>
-                  <CopyField value={`${webHookBase}/webhook`} label="Webhook URL" />
-                </div>
-              </div>
-            </Card>
-          )}
 
           {/* Help card */}
           <Card style={{ background: 'var(--bg-overlay)', border: '1.5px solid var(--border)' }}>

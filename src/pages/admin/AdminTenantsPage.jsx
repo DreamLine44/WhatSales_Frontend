@@ -102,8 +102,8 @@ function NewCredentialBox({ label, value, onDone }) {
         </button>
       </div>
 
-      <Btn size="sm" onClick={onDone} style={{ width: '100%' }}>
-        <Check size={13} /> I've saved this — close
+      <Btn size="sm" variant="soft" onClick={onDone} style={{ width: '100%' }}>
+        <Check size={13} /> I've copied this safely — close
       </Btn>
     </div>
   );
@@ -187,7 +187,7 @@ function CreateTenantModal({ onClose, onCreate }) {
   const selectedMode = SUPPORTED_MODES.find(m => m.value === form.businessMode);
 
   return (
-    <Modal onClose={step === 3 ? onClose : onClose} maxWidth={520}>
+    <Modal onClose={step === 3 && created?.apiKey ? undefined : onClose} maxWidth={520}>
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1.1rem', marginBottom: 10 }}>
           {step < 3 ? 'Create Tenant' : '🎉 Tenant Created'}
@@ -381,9 +381,9 @@ function RegenKeyModal({ tenant, onClose, onKeyRegenerated }) {
             <Btn variant="ghost" fullWidth onClick={onClose} disabled={loading}>Cancel</Btn>
             <Btn
               fullWidth
+              variant={confirmed && !loading ? 'amber' : 'ghost'}
               disabled={!confirmed || loading}
               loading={loading}
-              style={{ background: confirmed && !loading ? 'var(--amber)' : undefined }}
               onClick={regen}
             >
               <RotateCcw size={14} /> Regenerate Key
@@ -553,22 +553,23 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
         toast.error('Cannot activate: remove the SIM_ placeholder Phone Number ID first. Set real credentials in the WhatsApp tab.');
         return;
       }
-      // Guard: onboardingStep < 3 means WhatsApp credentials haven't been verified yet.
-      // Auto-force-activate when not yet verified — guide admin to verify separately.
+
+      // [FIX-6] Block activation when no phoneNumberId at all — bot cannot send messages.
+      if (!pid) {
+        toast.error('Cannot activate: no WhatsApp credentials configured. Use the WhatsApp tab to save Phone Number ID and Access Token, then verify.');
+        return;
+      }
+
+      // [FIX-5] Block activation when credentials haven't been verified against Meta.
+      // Previously this silently force-activated, meaning bots would be set live without
+      // verified credentials and then silently fail to respond to every message.
+      // Now it hard-blocks: admin must verify first via the WhatsApp tab.
       if ((tenant.onboardingStep ?? 0) < 3 && !tenant.whatsapp?.connected) {
-        
-        setStatusSaving(true);
-        try {
-          await adminApi.updateStatus(tenant._id, newStatus, { force: true });
-          applyUpdate({ status: newStatus });
-          toast.success(`${tenant.name || "Tenant"} → ${newStatus}`);
-          toast('Next step: WhatsApp tab → Save Credentials → Verify WhatsApp so the bot responds correctly.', { icon: 'ℹ️', duration: 7000 });
-        } catch (err) {
-          toast.error(err.message);
-        } finally {
-          setStatusSaving(false);
-          
-        }
+        toast.error(
+          'Cannot activate: WhatsApp credentials have not been verified with Meta yet. ' +
+          'Go to the WhatsApp tab → Save Credentials → Verify WhatsApp, then activate.',
+          { duration: 8000 }
+        );
         return;
       }
     }
@@ -744,8 +745,8 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
                 variant="ghost"
                 onClick={verifyWA}
                 loading={verifying}
-                disabled={!tenant.whatsapp?.phoneNumberId && !form.whatsapp.phoneNumberId}
-                title={(!tenant.whatsapp?.phoneNumberId && !form.whatsapp.phoneNumberId) ? 'Enter and save Phone Number ID + Access Token first' : tenant.whatsapp?.phoneNumberId ? 'Call Meta API to verify stored credentials' : 'Save credentials first, then verify'}
+                disabled={!tenant.whatsapp?.phoneNumberId}
+                title={!tenant.whatsapp?.phoneNumberId ? 'Save credentials first — click "Save Credentials" before verifying' : 'Call Meta API to verify stored credentials'}
                 style={{ alignSelf: 'flex-start' }}
               >
                 <CheckCircle2 size={14} /> Verify WhatsApp
@@ -794,7 +795,9 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
                 <div style={{ background: 'var(--amber-dim)', border: '1.5px solid rgba(217,119,6,0.22)', borderRadius: 'var(--r-md)', padding: '10px 14px', marginBottom: 14, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                   <Info size={14} color="var(--amber)" style={{ flexShrink: 0, marginTop: 1 }} />
                   <span style={{ fontSize: '0.8rem', color: 'var(--amber)', lineHeight: 1.5 }}>
-                    <strong>WhatsApp not yet verified</strong> (onboarding step {step}/3). Activating will proceed automatically. For the bot to work correctly, use the WhatsApp tab → Save Credentials → <strong>Verify WhatsApp</strong> first.
+                    {/* [FIX-5] Previously said "activating will proceed automatically" — that was incorrect.
+                        Activation is now blocked until verification is complete. */}
+                    <strong>WhatsApp not yet verified</strong> (step {step}/3). Activation is blocked until credentials are verified with Meta. Go to the <strong>WhatsApp tab → Save Credentials → Verify WhatsApp</strong> first.
                   </span>
                 </div>
               );
@@ -1190,7 +1193,10 @@ export default function AdminTenantsPage() {
     if (q?.trim())  params.name   = q.trim();
     if (sf)         params.status = sf;
     adminApi.listTenants(params)
-      .then(r => setTenants(r.data?.tenants || r.data || []))
+      .then(r => {
+        const list = r.data?.tenants;
+        setTenants(Array.isArray(list) ? list : []);
+      })
       .catch(err => toast.error(err.message))
       .finally(() => setLoading(false));
   }, []);

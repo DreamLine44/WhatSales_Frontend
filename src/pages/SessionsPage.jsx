@@ -109,7 +109,7 @@ export default function SessionsPage() {
 
   const load = useCallback((silent = false) => {
     if (!silent) setLoading(true);
-    setError(null);
+    if (!silent) setError(null);
     // GET /admin/sessions/:tenantId — response: { sessions, total, page, pages, limit }
     sessionsApi.list({ limit: 100 })
       .then(r => {
@@ -119,9 +119,11 @@ export default function SessionsPage() {
           throw new Error('Unexpected response shape from /admin/sessions — expected { sessions: [...] }');
         }
         setSessions(list);
+        // Clear any prior error on successful refresh (silent or not)
+        setError(null);
       })
       .catch(err => {
-        setError(err.message);
+        if (!silent) setError(err.message);
         if (!silent) toast.error(err.message);
       })
       .finally(() => { if (!silent) setLoading(false); });
@@ -130,9 +132,9 @@ export default function SessionsPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
-  // Auto-refresh every 30s so human-mode alerts stay fresh
+  // Auto-refresh every 60s so human-mode alerts stay fresh (reduced from 30s)
   useEffect(() => {
-    pollRef.current = setInterval(() => load(true), 30000);
+    pollRef.current = setInterval(() => load(true), 60000);
     return () => clearInterval(pollRef.current);
   }, [load]);
 

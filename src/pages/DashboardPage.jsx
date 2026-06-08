@@ -115,9 +115,9 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
-  // Auto-refresh dashboard every 60s
+  // Auto-refresh dashboard every 120s (reduced from 60s — halves load on /dashboard/:id/overview)
   useEffect(() => {
-    const t = setInterval(load, 60000);
+    const t = setInterval(load, 120000);
     return () => clearInterval(t);
   }, [load]);
 
@@ -129,10 +129,13 @@ export default function DashboardPage() {
   const bizFromOverview = overview?.business || {};
 
   const setupItems = [
-    { label: 'Business Info',      done: !!user?.name && user.name !== 'My Business', to: '/setup/business' },
-    { label: 'WhatsApp Connected', done: whatsappActive,                               to: '/setup/whatsapp' },
-    { label: 'Opening Hours',      done: !!(bizFromOverview.hours?.enabled),           to: '/setup/hours' },
-    { label: 'Bot Messages',       done: !!(bizFromOverview.customMessages?.welcome),  to: '/setup/bot' },
+    { label: 'Business Info',         done: !!user?.name && user.name !== 'My Business', to: '/setup/business' },
+    // [FIX-BOUNDARY-2] Label clarifies WhatsApp is connected by admin, not by the tenant.
+    // The item still links to /setup/whatsapp so they can check status, but the label
+    // removes any implication that the tenant is expected to take action themselves.
+    { label: 'WhatsApp (by admin)',    done: whatsappActive,                              to: '/setup/whatsapp' },
+    { label: 'Opening Hours',         done: !!(bizFromOverview.hours?.enabled),           to: '/setup/hours' },
+    { label: 'Bot Messages',          done: !!(bizFromOverview.customMessages?.welcome),  to: '/setup/bot' },
   ];
   const setupDone = setupItems.filter(i => i.done).length;
 
@@ -158,9 +161,10 @@ export default function DashboardPage() {
         </Btn>
       </div>
 
-      {/* WhatsApp status banner */}
-      {!whatsappConnected && (
-        whatsappConfigured && tenantActive ? (
+      {/* WhatsApp status banner — shown only when bot is not yet active */}
+      {!whatsappActive && (
+        whatsappConfigured ? (
+          // Credentials saved by admin, tenant is ACTIVE — provisioning in progress
           <div style={{
             display: 'flex', alignItems: 'center', gap: 14,
             padding: '14px 18px', marginBottom: 22,
@@ -171,12 +175,14 @@ export default function DashboardPage() {
               <Zap size={18} color="var(--primary)" />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>WhatsApp provisioning…</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Your bot is being set up and will be live shortly.</div>
+              {/* [FIX-BOUNDARY-3] Clarify this is admin-managed provisioning, not a tenant action */}
+              <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>WhatsApp provisioning in progress</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Your admin is finalising your WhatsApp connection. The bot will go live automatically once complete.</div>
             </div>
-            <Btn size="sm" variant="soft" onClick={() => navigate('/setup/whatsapp')} style={{ flexShrink: 0 }}>Details</Btn>
+            <Btn size="sm" variant="soft" onClick={() => navigate('/setup/whatsapp')} style={{ flexShrink: 0 }}>View Status</Btn>
           </div>
         ) : (
+          // No credentials configured yet — admin hasn't started setup
           <div style={{
             display: 'flex', alignItems: 'center', gap: 14,
             padding: '14px 18px', marginBottom: 22,
@@ -187,10 +193,12 @@ export default function DashboardPage() {
               <Zap size={18} color="var(--amber)" />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--amber)', marginBottom: 2 }}>WhatsApp not connected</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Your AI bot won't respond until WhatsApp is connected.</div>
+              {/* [FIX-BOUNDARY-1] Do NOT show a "Connect" CTA — tenant cannot connect WhatsApp.
+                  WhatsApp connection is done entirely by the admin. Direct tenant to contact admin. */}
+              <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--amber)', marginBottom: 2 }}>WhatsApp not connected yet</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Your bot won't respond until WhatsApp is connected by your administrator. Contact <strong>support@whatsales.app</strong> to get started.</div>
             </div>
-            <Btn size="sm" variant="amber" onClick={() => navigate('/setup/whatsapp')} style={{ flexShrink: 0 }}>Connect</Btn>
+            <Btn size="sm" variant="ghost" onClick={() => navigate('/setup/whatsapp')} style={{ flexShrink: 0 }}>View Status</Btn>
           </div>
         )
       )}

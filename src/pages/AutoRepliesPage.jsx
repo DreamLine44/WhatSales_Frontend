@@ -61,7 +61,7 @@ function FaqRow({ faq, onUpdate, onDelete }) {
               style={{
                 width: '100%', boxSizing: 'border-box',
                 padding: '10px 12px', borderRadius: 'var(--r-md)',
-                border: '1.5px solid var(--border)', background: 'var(--bg-input)',
+                border: '1.5px solid var(--border)', background: 'var(--bg-surface)',
                 color: 'var(--text-primary)', fontSize: '0.875rem',
                 fontFamily: 'var(--font-body)', resize: 'vertical', outline: 'none',
               }}
@@ -159,7 +159,7 @@ export default function AutoRepliesPage() {
                 style={{
                   width: '100%', boxSizing: 'border-box',
                   padding: '10px 12px', borderRadius: 'var(--r-md)',
-                  border: '1.5px solid var(--border)', background: 'var(--bg-input)',
+                  border: '1.5px solid var(--border)', background: 'var(--bg-surface)',
                   color: 'var(--text-primary)', fontSize: '0.875rem',
                   fontFamily: 'var(--font-body)', resize: 'vertical', outline: 'none',
                 }}
