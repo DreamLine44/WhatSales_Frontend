@@ -1,6 +1,7 @@
 /* ─── WhatSales UI v4 — Premium Design System ─── */
 import { Loader2, X, TrendingUp, TrendingDown } from 'lucide-react';
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 
 /* ── Page Header ── */
 export function PageHeader({ title, subtitle, action }) {
@@ -276,8 +277,8 @@ export function Modal({ open, onClose, title, children, width=500 }) {
   }, [open, onClose]);
 
   if (!open) return null;
-  return (
-    <div style={{ position:'fixed', inset:0, zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+  return createPortal(
+    <div style={{ position:'fixed', inset:0, zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
       <div style={{ position:'absolute', inset:0, background:'rgba(8,18,12,0.55)', backdropFilter:'blur(6px)' }} onClick={onClose} />
       <div style={{
         position:'relative', width:'100%', maxWidth:width,
@@ -298,7 +299,8 @@ export function Modal({ open, onClose, title, children, width=500 }) {
         )}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -424,8 +426,8 @@ export function ConfirmModal({ open, onClose, onConfirm, title, message, confirm
   const variantColor = variant === 'danger' ? 'var(--red)' : variant === 'amber' ? 'var(--amber)' : 'var(--primary)';
   const variantBg    = variant === 'danger' ? 'var(--red-dim)' : variant === 'amber' ? 'var(--amber-dim)' : 'var(--primary-dim)';
 
-  return (
-    <div style={{ position:'fixed', inset:0, zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+  return createPortal(
+    <div style={{ position:'fixed', inset:0, zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
       <div style={{ position:'absolute', inset:0, background:'rgba(8,18,12,0.55)', backdropFilter:'blur(6px)' }} onClick={() => { if (!loading) onClose?.(); }} />
       <div style={{
         position:'relative', width:'100%', maxWidth:400,
@@ -458,6 +460,7 @@ export function ConfirmModal({ open, onClose, onConfirm, title, message, confirm
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

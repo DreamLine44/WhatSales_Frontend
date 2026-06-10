@@ -212,10 +212,12 @@ export default function WhatsAppPage() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div>
-                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Phone Number ID</div>
                   {wa.phoneNumberId
-                    ? <CopyField value={wa.phoneNumberId} label="Phone Number ID" />
-                    : <div style={{ fontSize: '0.875rem', color: 'var(--text-ghost)', fontStyle: 'italic' }}>Not configured yet</div>
+                    ? <CopyField label="Phone Number ID" value={wa.phoneNumberId} />
+                    : <>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Phone Number ID</div>
+                        <div style={{ fontSize: '0.875rem', color: 'var(--text-ghost)', fontStyle: 'italic' }}>Not configured yet</div>
+                      </>
                   }
                 </div>
 

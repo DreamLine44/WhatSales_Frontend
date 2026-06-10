@@ -1,5 +1,6 @@
 // ── WhatSales UI Kit — v3 ─────────────────────────────────────────────────────
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, Copy, CheckCircle2, Eye, EyeOff, X, AlertTriangle, Info, CheckCircle, AlertCircle, Search, TrendingUp, TrendingDown } from 'lucide-react';
 
 // ── Hover helper (inline-style hover without CSS classes) ─────────────────────
@@ -434,9 +435,17 @@ export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend
         {/* FIX: label bumped from 0.69rem → 0.73rem, contrast improved */}
         <div style={{ fontSize: '0.73rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>{label}</div>
         <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', letterSpacing: '-0.04em', lineHeight: 1 }}>
-          {typeof value === 'string' && value.includes(' ')
-            ? <><span style={{ fontSize: '1.05rem', fontWeight: 700, opacity: 0.55 }}>{value.split(' ')[0]}</span>{' '}{value.split(' ')[1]}</>
-            : (value ?? '—')}
+          {(() => {
+            if (typeof value !== 'string') return value ?? '—';
+            // Support both regular space and narrow no-break space (\u202f)
+            const spaceIdx = value.search(/[ \u202f]/);
+            if (spaceIdx > 0) {
+              const prefix = value.slice(0, spaceIdx);
+              const rest   = value.slice(spaceIdx + 1);
+              return <><span style={{ fontSize: '1.05rem', fontWeight: 700, opacity: 0.55 }}>{prefix}</span>{'\u00a0'}{rest}</>;
+            }
+            return value;
+          })()}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
           {sub && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{sub}</div>}
@@ -498,12 +507,11 @@ export function Modal({ children, onClose, maxWidth = 540, title }) {
     return () => { document.body.style.overflow = ''; };
   }, []);
 
-  return (
+  const modal = (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 1000,
+      position: 'fixed', inset: 0, zIndex: 9000,
       overflowY: 'auto',
       background: 'rgba(4,46,20,0.45)', backdropFilter: 'blur(6px)',
-      // FIX: responsive padding — tighter on mobile
       padding: 'max(12px, env(safe-area-inset-top, 12px)) 12px max(12px, env(safe-area-inset-bottom, 12px))',
       display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
     }}>
@@ -538,13 +546,14 @@ export function Modal({ children, onClose, maxWidth = 540, title }) {
             </button>
           </div>
         )}
-        {/* FIX: responsive inner padding */}
         <div style={{ padding: title ? 'clamp(16px, 4vw, 24px)' : 0 }}>
           {children}
         </div>
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }
 
 // ── Confirm dialog ────────────────────────────────────────────────────────────

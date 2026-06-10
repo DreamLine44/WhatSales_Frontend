@@ -233,7 +233,7 @@ export default function DashboardPage() {
             <StatCard label="Customers" value={d.customers ?? 0} icon={Users} color="blue" sub="Total unique" />
             <StatCard
               label="Revenue (30d)"
-              value={d.revenue != null ? `D\u202f${Number(d.revenue).toFixed(0)}` : '—'}
+              value={d.revenue != null ? `D ${Number(d.revenue).toFixed(0)}` : '—'}
               icon={TrendingUp} color="amber" sub="Confirmed orders"
             />
             <StatCard label="Live Sessions" value={overview?.activeHumanSessions ?? 0} icon={MessageSquare} color="purple" sub="Human-mode active" />
