@@ -3,9 +3,16 @@ import { ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Clock, Package, Dollar
 import { dashApi, orderApi } from '../api.js';
 import { PageHeader, Card, StatusBadge, Btn, EmptyState, Spinner, Select, FilterBar, InlineSelect, Pagination } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
-// Valid statuses: pending | payment_pending_verification | confirmed | completed | cancelled | payment_failed | rejected
+// [FIX-ORDERS-STATUS] Full 11-value Order.status enum from the backend model —
+// previously this list was missing preparing/ready/out_for_delivery/delivered,
+// meaning an order stuck in one of those states had no way to be filtered to
+// or explicitly set via this dropdown (Appendix B bug #7).
 // Customers receive WhatsApp notifications on: confirmed, completed, cancelled, rejected
-const STATUS_OPTIONS = ['pending','payment_pending_verification','confirmed','completed','cancelled','payment_failed','rejected'];
+const STATUS_OPTIONS = [
+  'pending', 'payment_pending_verification', 'confirmed', 'preparing',
+  'ready', 'out_for_delivery', 'delivered', 'completed', 'cancelled',
+  'payment_failed', 'rejected',
+];
 
 function OrderRow({ order, onUpdate }) {
   const [expanded, setExpanded] = useState(false);
@@ -136,7 +143,8 @@ export default function OrdersPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(page, statusFilter); }, [page, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
+  useEffect(() => { load(page, statusFilter); }, [page, statusFilter]);
 
   const pendingCount = orders.filter(o => o.status === 'pending').length;
   const revenue = orders.filter(o => ['confirmed','completed'].includes(o.status)).reduce((s, o) => s + (o.totalPrice || 0), 0);
@@ -161,7 +169,11 @@ export default function OrdersPage() {
           )}
           {revenue > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: 'var(--bg-overlay)', border: '1.5px solid var(--border)', borderRadius: 'var(--r-md)', fontSize: '0.815rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-              <DollarSign size={13} /> D {revenue.toFixed(0)} visible
+              {/* [FIX-ORDERS-8] Explicit label — this is a sum of only the orders
+                  currently on this page, not a 30-day total (which lives on the
+                  Overview page). Ambiguous "D6750 visible" next to Overview's
+                  "Revenue (30D)" caused confused support questions per audit. */}
+              <DollarSign size={13} /> D {revenue.toFixed(0)} — this page only
             </div>
           )}
         </div>

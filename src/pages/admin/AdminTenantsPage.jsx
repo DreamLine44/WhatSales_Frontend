@@ -6,11 +6,11 @@ import {
   Hash, RotateCcw, Eye, EyeOff,
   AlertTriangle, Info,
 } from 'lucide-react';
-import { adminApi, BUSINESS_MODES, getModeConfig } from '../../api.js';
+import { adminApi, getModeConfig, useBusinessModes } from '../../api.js';
 
 import {
   PageHeader, Card, Btn, Badge, StatusBadge, EmptyState,
-  Spinner, Modal, ConfirmDialog, CopyField, Input, Select,
+  Spinner, Modal, ConfirmDialog, TypeConfirmDialog, CopyField, Input, Select,
 } from '../../components/ui.jsx';
 import toast from 'react-hot-toast';
 
@@ -24,11 +24,11 @@ const STATUS_META = {
   SUSPENDED: { color: 'var(--red)',        desc: 'Suspended due to policy or payment issue.' },
 };
 
-// All modes supported by the backend BusinessConfig enum
-const SUPPORTED_MODES = BUSINESS_MODES.filter(m =>
-  ['RESTAURANT','BAKERY','SALON','BARBERSHOP','COSMETICS','ELECTRONICS',
-   'FASHION','RETAIL','SUPERMARKET','PHARMACY','DELIVERY','SERVICES','GENERAL'].includes(m.value)
-);
+// [FIX-MODES-DYNAMIC] Business mode options are now fetched live from
+// GET /business/modes via the useBusinessModes() hook inside each component
+// that needs them (CreateTenantModal, EditTenantModal) — this constant no
+// longer hardcodes the list, so a mode added on the backend shows up here
+// without a frontend redeploy (Appendix B bug #9).
 
 // ── Tiny copy button ──────────────────────────────────────────────────────────
 function CopyBtn({ value, label }) {
@@ -111,6 +111,7 @@ function NewCredentialBox({ label, value, onDone }) {
 
 // ── Create Tenant Modal ───────────────────────────────────────────────────────
 function CreateTenantModal({ onClose, onCreate }) {
+  const SUPPORTED_MODES = useBusinessModes();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
     name: '', adminPhone: '', businessMode: 'RESTAURANT', email: '',
@@ -399,6 +400,7 @@ function RegenKeyModal({ tenant, onClose, onKeyRegenerated }) {
 
 // ── Edit Tenant Modal ─────────────────────────────────────────────────────────
 function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
+  const SUPPORTED_MODES = useBusinessModes();
   const [tab, setTab] = useState('info');
   // [FIX-EDIT-1] Keep a mutable local copy so status changes reflect in the header badge
   const [tenant, setTenant] = useState(initialTenant);
@@ -439,33 +441,62 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
     });
   }, [onUpdate]);
 
+  // [FIX-BUSINESSMODE-1] Appendix B bug #1: businessMode lives on the
+  // BusinessConfig document, not on Tenant. PATCH /admin/tenants/:id's field
+  // allowlist is ['name','adminPhone','email','plan','notes','whatsapp.*',
+  // 'meta.*','limits.*'] — it has NO businessMode field, so sending it there
+  // was being silently dropped (200 OK, but the mode never actually changed).
+  // Fix: fire two separate requests when businessMode has changed —
+  //   1) PATCH /admin/tenants/:id for name/phone/email/plan
+  //   2) PUT   /business/:tenantId for businessMode specifically
+  // and report success only once both succeed; if either fails, say which one.
   const saveInfo = async () => {
     if (!form.name.trim()) { toast.error('Business name is required'); return; }
     setSaving(true);
+    const modeChanged = form.businessMode !== tenant.businessMode;
+    let tenantOk = false, tenantErr = null;
+    let modeOk   = true,  modeErr   = null; // true when unchanged (nothing to fail)
+
     try {
       const r = await adminApi.updateTenant(tenant._id, {
-        name:         form.name.trim(),
-        adminPhone:   form.adminPhone.trim() || undefined,
-        businessMode: form.businessMode,
-        plan:         form.plan,
-        // [FIX-EDIT-3] Include email in update payload
-        email:        form.email.trim()      || undefined,
+        name:       form.name.trim(),
+        adminPhone: form.adminPhone.trim() || undefined,
+        plan:       form.plan,
+        email:      form.email.trim()      || undefined,
       });
-      // [FIX-EDIT-4] Merge server response into existing tenant object
-      // so _id, whatsapp, createdAt etc. are not lost if the server only returns changed fields
       const serverData = r.data?.tenant || {};
-      applyUpdate({
-        name:         serverData.name         ?? form.name.trim(),
-        adminPhone:   serverData.adminPhone   ?? form.adminPhone.trim(),
-        businessMode: serverData.businessMode ?? form.businessMode,
-        plan:         serverData.plan         ?? form.plan,
-        email:        serverData.email        ?? form.email.trim(),
-      });
-      toast.success('Business info saved');
+      applyUpdate(() => ({
+        name:       serverData.name       ?? form.name.trim(),
+        adminPhone: serverData.adminPhone ?? form.adminPhone.trim(),
+        plan:       serverData.plan       ?? form.plan,
+        email:      serverData.email      ?? form.email.trim(),
+      }));
+      tenantOk = true;
     } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setSaving(false);
+      tenantErr = err.message;
+    }
+
+    if (modeChanged) {
+      try {
+        await adminApi.updateBusinessMode(tenant._id, form.businessMode);
+        applyUpdate({ businessMode: form.businessMode });
+        modeOk = true;
+      } catch (err) {
+        modeOk = false;
+        modeErr = err.message;
+      }
+    }
+
+    setSaving(false);
+
+    if (tenantOk && modeOk) {
+      toast.success('Business info saved');
+    } else if (tenantOk && !modeOk) {
+      toast.error(`Business details saved, but Business Mode failed to update — ${modeErr || 'try again'}`);
+    } else if (!tenantOk && modeOk) {
+      toast.error(`Business Mode saved, but the rest of the business details failed — ${tenantErr || 'try again'}`);
+    } else {
+      toast.error(tenantErr || 'Failed to save changes');
     }
   };
 
@@ -917,11 +948,18 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
 
 // ── Tenant Row ────────────────────────────────────────────────────────────────
 function TenantRow({ tenant, onUpdate, onDelete }) {
-  const [editing, setEditing]               = useState(false);
-  const [confirmDelete, setConfirmDelete]   = useState(false);
-  const [deleting, setDeleting]             = useState(false);
-  const [togglingStatus, setTogglingStatus] = useState(false);
-  const [expanded, setExpanded]             = useState(false);
+  const [editing, setEditing]                     = useState(false);
+  const [confirmDelete, setConfirmDelete]         = useState(false);
+  const [deleting, setDeleting]                   = useState(false);
+  const [togglingStatus, setTogglingStatus]       = useState(false);
+  const [expanded, setExpanded]                   = useState(false);
+  // [FIX-ROW-4] Deactivating a live tenant stops their bot from responding to
+  // real customers — this now requires an explicit confirm, not one click.
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  // [FIX-ROW-5] Force-activating an unverified tenant is now a distinct,
+  // explicitly-labeled, explicitly-confirmed action instead of a silent
+  // auto-force triggered by clicking the same "Activate" toggle.
+  const [confirmForceActivate, setConfirmForceActivate] = useState(false);
   // [FIX-ROW-1] Guard against double-tap toggle race: only allow one in-flight toggle at a time
   const togglePending = useRef(false);
 
@@ -930,55 +968,54 @@ function TenantRow({ tenant, onUpdate, onDelete }) {
   const isSuspended = tenant.status === 'SUSPENDED';
   const modeConfig  = getModeConfig(tenant.businessMode);
 
-  // Quick toggle: ACTIVE ↔ INACTIVE only.
-  // Suspended tenants must be changed via Edit → Status (prevents accidental unsuspend).
-  const toggleActive = async () => {
-    if (isSuspended) {
-      toast.error('Cannot toggle a suspended tenant. Use Edit → Status to change.');
-      return;
-    }
+  const runStatusChange = async (newStatus, opts = {}) => {
     if (togglePending.current) return;
-
-    const newStatus = isActive ? 'INACTIVE' : 'ACTIVE';
-
-    // Guard: SIM_ phoneNumberId blocks activation (backend returns 400)
-    if (newStatus === 'ACTIVE') {
-      const pid = tenant.whatsapp?.phoneNumberId || '';
-      if (pid.startsWith('SIM_')) {
-        toast.error('Cannot activate: SIM_ placeholder credentials detected. Set real Meta credentials first via Edit → WhatsApp.');
-        return;
-      }
-      // Auto-force-activate when not yet verified — guide admin to verify separately.
-      if ((tenant.onboardingStep ?? 0) < 3 && !tenant.whatsapp?.connected) {
-        togglePending.current = true;
-        setTogglingStatus(true);
-        try {
-          await adminApi.updateStatus(tenant._id, newStatus, { force: true });
-          onUpdate({ ...tenant, status: newStatus });
-          toast.success(`${tenant.name || "Tenant"} → ${newStatus}`);
-          toast('Next step: open Edit → WhatsApp tab → Verify WhatsApp to confirm credentials with Meta.', { icon: 'ℹ️', duration: 7000 });
-        } catch (err) {
-          toast.error(err.message);
-        } finally {
-          setTogglingStatus(false);
-          togglePending.current = false;
-        }
-        return;
-      }
-    }
-
     togglePending.current = true;
     setTogglingStatus(true);
     try {
-      await adminApi.updateStatus(tenant._id, newStatus);
+      await adminApi.updateStatus(tenant._id, newStatus, opts);
       onUpdate({ ...tenant, status: newStatus });
-      toast.success(`${tenant.name} → ${newStatus}`);
+      toast.success(`${tenant.name || 'Tenant'} → ${newStatus}`);
+      if (opts.force) {
+        toast('Next step: open Edit → WhatsApp tab → Verify WhatsApp to confirm credentials with Meta.', { icon: 'ℹ️', duration: 7000 });
+      }
     } catch (err) {
       toast.error(err.message);
     } finally {
       setTogglingStatus(false);
       togglePending.current = false;
     }
+  };
+
+  // Quick toggle: ACTIVE ↔ INACTIVE only.
+  // Suspended tenants must be changed via Edit → Status (prevents accidental unsuspend).
+  const toggleActive = () => {
+    if (isSuspended) {
+      toast.error('Cannot toggle a suspended tenant. Use Edit → Status to change.');
+      return;
+    }
+    if (togglePending.current) return;
+
+    // Deactivating a currently-live tenant — confirm first, real customers are affected.
+    if (isActive) {
+      setConfirmDeactivate(true);
+      return;
+    }
+
+    // Guard: SIM_ phoneNumberId blocks activation (backend returns 400)
+    const pid = tenant.whatsapp?.phoneNumberId || '';
+    if (pid.startsWith('SIM_')) {
+      toast.error('Cannot activate: SIM_ placeholder credentials detected. Set real Meta credentials first via Edit → WhatsApp.');
+      return;
+    }
+    // Not yet verified with Meta — offer the distinct Force Activate path
+    // instead of silently sending force:true.
+    if ((tenant.onboardingStep ?? 0) < 3 && !tenant.whatsapp?.connected) {
+      setConfirmForceActivate(true);
+      return;
+    }
+
+    runStatusChange('ACTIVE');
   };
 
   const del = async () => {
@@ -1164,13 +1201,38 @@ function TenantRow({ tenant, onUpdate, onDelete }) {
         />
       )}
 
+      {/* [FIX-ROW-4] Deactivate confirm — this stops the live bot for real customers */}
       <ConfirmDialog
+        open={confirmDeactivate}
+        onClose={() => setConfirmDeactivate(false)}
+        onConfirm={() => { setConfirmDeactivate(false); runStatusChange('INACTIVE'); }}
+        loading={togglingStatus}
+        title={`Deactivate "${tenant.name}"?`}
+        message={`This will immediately stop ${tenant.name || 'this tenant'}'s bot from responding to their customers on WhatsApp. Continue?`}
+        confirmLabel="Deactivate"
+      />
+
+      {/* [FIX-ROW-5] Force Activate — distinct, danger-styled, explicitly confirmed.
+          Skips Meta verification; the bot may go "live" without confirmed ability to send messages. */}
+      <ConfirmDialog
+        open={confirmForceActivate}
+        onClose={() => setConfirmForceActivate(false)}
+        onConfirm={() => { setConfirmForceActivate(false); runStatusChange('ACTIVE', { force: true }); }}
+        loading={togglingStatus}
+        title="Force Activate — skip verification?"
+        message="This tenant's WhatsApp credentials haven't been verified with Meta yet. Force Activate marks the bot as live anyway, even though we couldn't confirm it can actually send messages. Use this only if you're confident the credentials are correct."
+        confirmLabel="Force Activate"
+      />
+
+      {/* [FIX-DELETE-1] Type-to-confirm — matches the severity of a 7-collection cascade delete */}
+      <TypeConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
         onConfirm={del}
         loading={deleting}
         title={`Delete "${tenant.name}"?`}
-        message="This permanently deletes the tenant and ALL their data — orders, bookings, sessions, customers. This cannot be undone."
+        message="This permanently deletes the tenant and ALL their data — orders, bookings, sessions, customers, analytics. This cannot be undone."
+        matchValue={tenant.name}
         confirmLabel="Delete Permanently"
       />
     </>

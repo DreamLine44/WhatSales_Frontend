@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useState, useEffect } from 'react';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up.railway.app';
 
@@ -78,6 +79,9 @@ export const bizApi = {
   // Preferred for partial saves (name, description, hours, customMessages, etc.)
   getSettings:    () => http.get(`/dashboard/${getTenantId()}/settings`),
   updateSettings: (body) => http.patch(`/dashboard/${getTenantId()}/settings`, body),
+  // GET /business/cloudinary-status → { cloudinaryEnabled: bool } — check before
+  // showing image-upload UI so a 503 "not configured" doesn't surprise the user.
+  cloudinaryStatus: () => http.get(`/business/cloudinary-status`),
 };
 
 // ── Menu CRUD — /dashboard/:tenantId/menu ─────────────────────────────────────
@@ -191,6 +195,15 @@ export const adminApi = {
   // POST /admin/tenants/:id/rotate-key → { ok, apiKey, note }
   // ⚠ New key shown ONCE — previous key immediately invalid
   rotateApiKey: (id) => adminHttp.post(`/admin/tenants/${id}/rotate-key`),
+
+  // ⚠ businessMode lives on BusinessConfig, NOT Tenant — PATCH /admin/tenants/:id
+  // silently ignores it. Must go through PUT /business/:tenantId instead.
+  // See Appendix B bug #1 — this is a separate call from updateTenant().
+  updateBusinessMode: (id, businessMode) => adminHttp.put(`/business/${id}`, { businessMode }),
+
+  // GET /business/modes → list of supported business modes (no :tenantId needed)
+  // Used so the Business Mode dropdown never goes stale vs. a hardcoded array.
+  getBusinessModes: () => adminHttp.get('/business/modes'),
 };
 
 // ── Admin session storage ─────────────────────────────────────────────────────
@@ -204,7 +217,10 @@ export const adminSession = {
 };
 
 // ── Business mode definitions ─────────────────────────────────────────────────
-// All 13 modes supported by the backend config/modes.js
+// Fallback list only — used if GET /business/modes (see useBusinessModes below)
+// is unreachable. Kept in sync with the 11-value businessMode enum documented
+// in the API contract (POST /admin/tenants). Previously included stale
+// SUPERMARKET/PHARMACY entries that aren't part of the documented backend enum.
 export const BUSINESS_MODES = [
   { value: 'RESTAURANT',  label: 'Restaurant',    emoji: '🍽', tier: 'full',  desc: 'Full ordering & payment flow' },
   { value: 'BAKERY',      label: 'Bakery',        emoji: '🥐', tier: 'full',  desc: 'Orders with cake customization' },
@@ -214,12 +230,38 @@ export const BUSINESS_MODES = [
   { value: 'ELECTRONICS', label: 'Electronics',   emoji: '📱', tier: 'full',  desc: 'Spec requests & orders' },
   { value: 'FASHION',     label: 'Fashion',       emoji: '👗', tier: 'full',  desc: 'Style-based product matching' },
   { value: 'RETAIL',      label: 'Retail / Shop', emoji: '🛍', tier: 'basic', desc: 'Standard product ordering' },
-  { value: 'SUPERMARKET', label: 'Supermarket',   emoji: '🛒', tier: 'basic', desc: 'Grocery ordering flow' },
-  { value: 'PHARMACY',    label: 'Pharmacy',      emoji: '💊', tier: 'basic', desc: 'Medication orders' },
   { value: 'DELIVERY',    label: 'Delivery',      emoji: '🚚', tier: 'basic', desc: 'Delivery ordering flow' },
   { value: 'SERVICES',    label: 'Services',      emoji: '🔧', tier: 'basic', desc: 'General service business' },
   { value: 'GENERAL',     label: 'General',       emoji: '🏪', tier: 'basic', desc: 'General purpose AI assistant' },
 ];
+
+// [FIX-MODES-DYNAMIC] Fetch the live list of supported business modes from
+// GET /business/modes so a future backend-added mode shows up here without a
+// frontend redeploy. Falls back to the hardcoded BUSINESS_MODES list above if
+// the endpoint is unreachable or returns something unexpected — never blocks
+// the Create/Edit Tenant forms on a network hiccup.
+let _modesCache = null;
+export function useBusinessModes() {
+  const [modes, setModes] = useState(_modesCache || BUSINESS_MODES);
+  useEffect(() => {
+    if (_modesCache) return;
+    adminApi.getBusinessModes()
+      .then(r => {
+        const list = r.data?.modes || r.data?.businessModes || r.data;
+        if (Array.isArray(list) && list.length) {
+          // Backend may return plain strings (e.g. "RESTAURANT") or full objects.
+          const normalised = list.map(m => {
+            if (typeof m === 'string') return getModeConfig(m) || { value: m, label: m, emoji: '🏪', tier: 'basic' };
+            return m;
+          });
+          _modesCache = normalised;
+          setModes(normalised);
+        }
+      })
+      .catch(() => { /* silent fallback — hardcoded list already rendering */ });
+  }, []);
+  return modes;
+}
 
 export function getModeConfig(mode) {
   return BUSINESS_MODES.find(m => m.value === mode) || BUSINESS_MODES[0];

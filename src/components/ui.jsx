@@ -575,6 +575,47 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, message, confir
   );
 }
 
+// ── Type-to-confirm dialog (for high-blast-radius destructive actions) ─────────
+// Requires the user to type an exact match string (e.g. the business name)
+// before the destructive action button becomes clickable.
+export function TypeConfirmDialog({ open, onClose, onConfirm, title, message, matchValue, matchLabel = 'the business name', confirmLabel = 'Delete Permanently', loading = false }) {
+  const [typed, setTyped] = useState('');
+  const close = () => { setTyped(''); onClose(); };
+  if (!open) return null;
+  const matches = typed.trim() === String(matchValue || '').trim() && typed.trim().length > 0;
+  return (
+    <Modal onClose={() => !loading && close()} maxWidth={440}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1.05rem', marginBottom: 8, letterSpacing: '-0.02em' }}>{title}</h3>
+          {message && <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.65 }}>{message}</p>}
+        </div>
+        <div>
+          <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+            Type <strong style={{ color: 'var(--text-primary)' }}>{matchValue}</strong> to confirm
+          </label>
+          <input
+            autoFocus
+            value={typed}
+            onChange={e => setTyped(e.target.value)}
+            placeholder={matchLabel}
+            disabled={loading}
+            style={{
+              width: '100%', padding: '9px 12px', borderRadius: 'var(--r-md)',
+              border: `1.5px solid ${typed && !matches ? 'var(--red)' : 'var(--border)'}`,
+              fontSize: '0.88rem', fontFamily: 'var(--font-mono)', outline: 'none', boxSizing: 'border-box',
+            }}
+          />
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Btn variant="ghost" fullWidth onClick={() => !loading && close()} disabled={loading}>Cancel</Btn>
+          <Btn variant="danger" fullWidth onClick={() => { onConfirm(); setTyped(''); }} loading={loading} disabled={loading || !matches}>{confirmLabel}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Copy field ────────────────────────────────────────────────────────────────
 export function CopyField({ label, value, secret = false }) {
   const [visible, setVisible] = useState(false);

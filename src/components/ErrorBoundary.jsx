@@ -1,5 +1,5 @@
 import { Component } from 'react';
-import { WhatsalesLogo } from '../App';
+import { Logo } from './ui.jsx';
 
 /**
  * Top-level error boundary.
@@ -35,7 +35,7 @@ export default class ErrorBoundary extends Component {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'var(--bg-base)',
+        background: 'var(--bg-page)',
         padding: '24px 16px',
       }}>
         <div style={{
@@ -43,13 +43,13 @@ export default class ErrorBoundary extends Component {
           width: '100%',
           background: 'var(--bg-surface)',
           border: '1.5px solid var(--border)',
-          borderRadius: 'var(--radius-2xl)',
+          borderRadius: 'var(--r-2xl)',
           padding: '44px 36px',
           boxShadow: 'var(--shadow-lg)',
           textAlign: 'center',
         }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
-            <WhatsalesLogo size={44} />
+            <Logo size={44} />
           </div>
 
           <h2 style={{

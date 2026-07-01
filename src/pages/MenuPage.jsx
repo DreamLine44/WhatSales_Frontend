@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { UtensilsCrossed, Plus, Trash2, Pencil, Check, X, ToggleLeft, ToggleRight } from 'lucide-react';
-import { menuApi } from '../api.js';
+import { UtensilsCrossed, Plus, Trash2, Pencil, Check, X, ToggleLeft, ToggleRight, Image as ImageIcon, Upload } from 'lucide-react';
+import { menuApi, bizApi } from '../api.js';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Input } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
 // ⚠ price must be a Number, not a string
 // ⚠ always use _id for update/delete — never item name
 
-function ItemRow({ item, onUpdate, onDelete }) {
+function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
   const [editing, setEditing]   = useState(false);
   const [form, setForm] = useState({
     name:        item.name,
@@ -23,6 +23,7 @@ function ItemRow({ item, onUpdate, onDelete }) {
   const [saving, setSaving]     = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   // PATCH /menu/:itemId — edit by _id (not name)
   const save = async () => {
@@ -67,6 +68,41 @@ function ItemRow({ item, onUpdate, onDelete }) {
     finally { setToggling(false); }
   };
 
+  // POST /menu/:itemId/image — multipart image upload
+  const uploadImage = async (file) => {
+    if (!file) return;
+    if (!cloudinaryEnabled) {
+      toast.error('Image uploads aren\'t enabled for this platform yet. Ask your administrator to configure image storage.');
+      return;
+    }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      const r = await menuApi.uploadImage(item._id, fd);
+      const newList = r.data?.menuItems || null;
+      const updated = newList?.find(i => i._id === item._id) || { ...item, image: r.data?.image };
+      onUpdate(newList, updated);
+      toast.success('Image uploaded');
+    } catch (err) {
+      // 503 = Cloudinary not configured on this environment — a graceful, human message
+      const msg = err.message?.toLowerCase().includes('cloudinary') || err.message?.includes('503')
+        ? 'Image uploads aren\'t set up for this business yet.'
+        : err.message;
+      toast.error(msg);
+    } finally { setUploading(false); }
+  };
+
+  const removeImage = async () => {
+    setUploading(true);
+    try {
+      await menuApi.removeImage(item._id);
+      onUpdate(null, { ...item, image: null });
+      toast.success('Image removed');
+    } catch (err) { toast.error(err.message); }
+    finally { setUploading(false); }
+  };
+
   return (
     <div style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '14px 18px', marginBottom: 8 }}>
       {editing ? (
@@ -83,6 +119,41 @@ function ItemRow({ item, onUpdate, onDelete }) {
         </div>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          {/* Image thumbnail / upload control */}
+          <div style={{ flexShrink: 0, position: 'relative' }}>
+            <label
+              title={cloudinaryEnabled ? (item.image ? 'Change image' : 'Add image') : 'Image uploads not enabled'}
+              style={{
+                width: 52, height: 52, borderRadius: 'var(--r-md)', overflow: 'hidden',
+                border: '1.5px solid var(--border)', display: 'flex', alignItems: 'center',
+                justifyContent: 'center', background: 'var(--bg-overlay)',
+                cursor: cloudinaryEnabled ? 'pointer' : 'not-allowed', flexShrink: 0,
+              }}
+            >
+              {uploading ? (
+                <Spinner size={16} />
+              ) : item.image ? (
+                <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                cloudinaryEnabled ? <Upload size={16} color="var(--text-ghost)" /> : <ImageIcon size={16} color="var(--text-ghost)" />
+              )}
+              <input
+                type="file" accept="image/*" style={{ display: 'none' }}
+                disabled={!cloudinaryEnabled || uploading}
+                onChange={e => uploadImage(e.target.files?.[0])}
+              />
+            </label>
+            {item.image && cloudinaryEnabled && (
+              <button onClick={removeImage} disabled={uploading} title="Remove image"
+                style={{
+                  position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%',
+                  background: 'var(--red)', color: '#fff', border: '2px solid var(--bg-surface)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
+                }}>
+                <X size={10} />
+              </button>
+            )}
+          </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
               <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{item.name}</span>
@@ -123,12 +194,19 @@ export default function MenuPage() {
   const [adding, setAdding]       = useState(false);
   const [form, setForm] = useState({ name: '', price: '', description: '' });
   const [saving, setSaving]       = useState(false);
+  // [FIX-MENU-IMAGES] Check whether image storage is configured on this
+  // environment before offering an upload control — avoids a confusing
+  // "upload failed" the first time someone tries, per Appendix C spec.
+  const [cloudinaryEnabled, setCloudinaryEnabled] = useState(false);
 
   useEffect(() => {
     menuApi.list()
       .then(r => setMenuItems(r.data?.menuItems || []))
       .catch(err => toast.error(err.message))
       .finally(() => setLoading(false));
+    bizApi.cloudinaryStatus()
+      .then(r => setCloudinaryEnabled(!!r.data?.cloudinaryEnabled))
+      .catch(() => setCloudinaryEnabled(false));
   }, []);
 
   const handleUpdate = (newList, updatedItem) => {
@@ -186,6 +264,16 @@ export default function MenuPage() {
         </Card>
       )}
 
+      {!loading && !cloudinaryEnabled && menuItems.length > 0 && (
+        <div style={{
+          background: 'var(--amber-dim)', border: '1.5px solid rgba(217,119,6,0.22)',
+          borderRadius: 'var(--r-md)', padding: '9px 14px', marginBottom: 12,
+          fontSize: '0.8rem', color: 'var(--amber)',
+        }}>
+          Photo uploads aren't turned on for this business yet — items will show as text-only to customers. Contact your administrator to enable this.
+        </div>
+      )}
+
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}><Spinner size={28} /></div>
       ) : menuItems.length === 0 ? (
@@ -198,7 +286,7 @@ export default function MenuPage() {
       ) : (
         <div>
           {menuItems.map((item) => (
-            <ItemRow key={item._id} item={item} onUpdate={handleUpdate} onDelete={handleDelete} />
+            <ItemRow key={item._id} item={item} onUpdate={handleUpdate} onDelete={handleDelete} cloudinaryEnabled={cloudinaryEnabled} />
           ))}
         </div>
       )}

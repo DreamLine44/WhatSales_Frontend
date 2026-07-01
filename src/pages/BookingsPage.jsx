@@ -113,7 +113,8 @@ function BookingsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(page, statusFilter); }, [page, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
+  useEffect(() => { load(page, statusFilter); }, [page, statusFilter]);
 
   return (
     <div className="fade-in">
