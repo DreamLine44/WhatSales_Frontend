@@ -203,7 +203,7 @@ export default function WhatsAppPage() {
           style={{ marginBottom: 20 }}
         >
           {isRejected
-            ? '❌ Your WhatsApp connection request was not approved. Contact support@whatsales.app for details.'
+            ? '❌ Your WhatsApp connection request was not approved. Contact alhassantrawally1@gmail.com or +220 3532423 for details.'
             : isLive
             ? '✅ Your WhatsApp number is connected and the bot is active.'
             : isConnected
@@ -235,7 +235,7 @@ export default function WhatsAppPage() {
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
               <AlertCircle size={16} color="var(--red)" style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                This request was not approved. Please contact <strong>support@whatsales.app</strong> for details or to resubmit.
+                This request was not approved. Please contact <strong>alhassantrawally1@gmail.com</strong> or <strong>+220 3532423</strong> for details or to resubmit.
               </div>
             </div>
           ) : (
@@ -324,7 +324,7 @@ export default function WhatsAppPage() {
                   WhatsApp Business API connections are set up by our admin team.
                   Once your credentials are verified with Meta and your account is activated,
                   your bot will start responding automatically.
-                  Contact <strong>support@whatsales.app</strong> if setup has not progressed within 24 hours.
+                  Contact <strong>alhassantrawally1@gmail.com</strong> or <strong>+220 3532423</strong> if setup has not progressed within 24 hours.
                 </p>
               </div>
             </div>

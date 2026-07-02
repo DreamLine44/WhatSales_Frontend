@@ -428,7 +428,7 @@ export default function LoginPage() {
             <div className="ws-fade-up">
               <p style={{ textAlign: 'center', marginTop: 20, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                 Don't have credentials?{' '}
-                <a href="mailto:support@whatsales.app" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'none' }}>
+                <a href="mailto:alhassantrawally1@gmail.com" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'none' }}>
                   Contact your administrator
                 </a>
               </p>

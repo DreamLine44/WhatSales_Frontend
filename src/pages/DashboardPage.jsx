@@ -202,7 +202,7 @@ export default function DashboardPage() {
               {/* [FIX-BOUNDARY-1] Do NOT show a "Connect" CTA — tenant cannot connect WhatsApp.
                   WhatsApp connection is done entirely by the admin. Direct tenant to contact admin. */}
               <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--amber)', marginBottom: 2 }}>WhatsApp not connected yet</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Your bot won't respond until WhatsApp is connected by your administrator. Contact <strong>support@whatsales.app</strong> to get started.</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Your bot won't respond until WhatsApp is connected by your administrator. Contact <strong>alhassantrawally1@gmail.com</strong> or <strong>+220 3532423</strong> to get started.</div>
             </div>
             <Btn size="sm" variant="ghost" onClick={() => navigate('/setup/whatsapp')} style={{ flexShrink: 0 }}>View Status</Btn>
           </div>
