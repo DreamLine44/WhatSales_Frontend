@@ -29,6 +29,7 @@ function MetricBar({ label, value, displayValue, color, max, suffix = '' }) {
 
 export default function AnalyticsPage() {
   const [data, setData] = useState(null);
+  const [timeseries, setTimeseries] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [days, setDays] = useState(30);
@@ -36,8 +37,16 @@ export default function AnalyticsPage() {
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    dashApi.analytics(days)
-      .then(r => setData(r.data))
+    Promise.all([
+      dashApi.analytics(days),
+      // GET /dashboard/:id/analytics/timeseries — day-by-day breakdown + top items.
+      // Non-fatal if it fails: the summary stat cards above still work without it.
+      dashApi.analyticsTimeseries(days).catch(() => ({ data: null })),
+    ])
+      .then(([summaryRes, tsRes]) => {
+        setData(summaryRes.data);
+        setTimeseries(tsRes.data);
+      })
       .catch(err => { setError(err.message); toast.error(err.message); })
       .finally(() => setLoading(false));
   }, [days]);
@@ -99,6 +108,24 @@ export default function AnalyticsPage() {
             </div>
           </Card>
 
+          {/* Top items — from GET /analytics/timeseries, only shown when data exists */}
+          {timeseries?.topItems?.length > 0 && (
+            <Card>
+              <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.95rem', marginBottom: 16, letterSpacing: '-0.02em' }}>
+                Top Items — Last {timeseries.days || days} days
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {timeseries.topItems.map((t, i) => (
+                  <div key={t.item} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-ghost)', width: 18, flexShrink: 0 }}>{i + 1}</span>
+                    <span style={{ flex: 1, fontSize: '0.86rem', color: 'var(--text-primary)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.item}</span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{t.quantity} sold</span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-ghost)' }}>· {t.orders} order{t.orders !== 1 ? 's' : ''}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
         </div>
       )}
     </div>

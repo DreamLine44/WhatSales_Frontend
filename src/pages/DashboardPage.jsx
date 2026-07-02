@@ -135,7 +135,7 @@ export default function DashboardPage() {
     // removes any implication that the tenant is expected to take action themselves.
     { label: 'WhatsApp (by admin)',    done: whatsappActive,                              to: '/setup/whatsapp' },
     { label: 'Opening Hours',         done: !!(bizFromOverview.hours?.enabled),           to: '/setup/hours' },
-    { label: 'Bot Messages',          done: !!(bizFromOverview.customMessages?.welcome),  to: '/setup/bot' },
+    { label: 'Bot Messages',          done: !!(bizFromOverview.customMessages?.welcomeMessage), to: '/setup/bot' },
   ];
   const setupDone = setupItems.filter(i => i.done).length;
 

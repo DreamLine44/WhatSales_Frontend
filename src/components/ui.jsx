@@ -326,6 +326,10 @@ const STATUS_MAP = {
   rejected: { color: 'red',    label: 'Rejected' },
   payment_failed: { color: 'red', label: 'Payment Failed' },
   payment_pending_verification: { color: 'amber', label: 'Awaiting Payment' },
+  preparing:        { color: 'blue', label: 'Preparing' },
+  ready:            { color: 'blue', label: 'Ready' },
+  out_for_delivery: { color: 'blue', label: 'Out for Delivery' },
+  delivered:        { color: 'blue', label: 'Delivered' },
 };
 // [REDESIGN v4] Order/booking progress echoes WhatsApp's own read-receipt
 // ticks — a single grounded detail tying status language back to the channel

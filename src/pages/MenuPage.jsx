@@ -79,10 +79,10 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
     try {
       const fd = new FormData();
       fd.append('image', file);
+      // POST /menu/:itemId/image returns { ok, image, menuItem } — no menuItems array.
       const r = await menuApi.uploadImage(item._id, fd);
-      const newList = r.data?.menuItems || null;
-      const updated = newList?.find(i => i._id === item._id) || { ...item, image: r.data?.image };
-      onUpdate(newList, updated);
+      const updated = r.data?.menuItem || { ...item, image: r.data?.image };
+      onUpdate(null, updated);
       toast.success('Image uploaded');
     } catch (err) {
       // 503 = Cloudinary not configured on this environment — a graceful, human message
@@ -122,7 +122,7 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
           {/* Image thumbnail / upload control */}
           <div style={{ flexShrink: 0, position: 'relative' }}>
             <label
-              title={cloudinaryEnabled ? (item.image ? 'Change image' : 'Add image') : 'Image uploads not enabled'}
+              title={cloudinaryEnabled ? (item.image?.url ? 'Change image' : 'Add image') : 'Image uploads not enabled'}
               style={{
                 width: 52, height: 52, borderRadius: 'var(--r-md)', overflow: 'hidden',
                 border: '1.5px solid var(--border)', display: 'flex', alignItems: 'center',
@@ -132,8 +132,8 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
             >
               {uploading ? (
                 <Spinner size={16} />
-              ) : item.image ? (
-                <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : item.image?.url ? (
+                <img src={item.image.url} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
                 cloudinaryEnabled ? <Upload size={16} color="var(--text-ghost)" /> : <ImageIcon size={16} color="var(--text-ghost)" />
               )}
@@ -143,7 +143,7 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
                 onChange={e => uploadImage(e.target.files?.[0])}
               />
             </label>
-            {item.image && cloudinaryEnabled && (
+            {item.image?.url && cloudinaryEnabled && (
               <button onClick={removeImage} disabled={uploading} title="Remove image"
                 style={{
                   position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%',

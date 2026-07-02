@@ -5,8 +5,18 @@ import { PageHeader, Card, Btn, EmptyState, Spinner, Avatar, SearchInput, Pagina
 import toast from 'react-hot-toast';
 
 function CustomerCard({ customer }) {
-  const name  = customer.name  || customer.customerName  || 'Customer';
+  // [FIX-CUSTOMERS-SCHEMA] UserProfile has no name/customerName field at all — the
+  // closest thing is lead.name, only populated when lead capture is enabled and the
+  // customer completed it. totalOrders/totalBookings live under stats.*, favourite
+  // items under preferences.favoriteItems ([{name,count}]), and there is no spend
+  // or lastOrderDate tracking anywhere in the schema or backend.
+  const name  = customer.lead?.name || customer.name || customer.customerName || 'Customer';
   const phone = customer.phone || customer.customerPhone || '—';
+  const totalOrders   = customer.stats?.totalOrders;
+  const totalBookings = customer.stats?.totalBookings;
+  const favoriteItems = customer.preferences?.favoriteItems || [];
+  const lastSeen  = customer.activity?.lastSeen;
+  const firstSeen = customer.activity?.firstSeen || customer.createdAt;
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -32,14 +42,14 @@ function CustomerCard({ customer }) {
           </div>
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          {customer.totalOrders != null && (
+          {totalOrders != null && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 700, justifyContent: 'flex-end' }}>
-              <ShoppingBag size={12} color="var(--text-muted)" />{customer.totalOrders}
+              <ShoppingBag size={12} color="var(--text-muted)" />{totalOrders}
             </div>
           )}
-          {customer.updatedAt && (
+          {lastSeen && (
             <div style={{ fontSize: '0.71rem', color: 'var(--text-ghost)', marginTop: 2 }}>
-              {new Date(customer.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+              {new Date(lastSeen).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
             </div>
           )}
         </div>
@@ -47,38 +57,38 @@ function CustomerCard({ customer }) {
       {expanded && (
         <div style={{ borderTop: '1.5px solid var(--border)', padding: '12px 18px', background: 'var(--bg-page)', animation: 'fadeIn 0.14s ease' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
-            {customer.totalOrders != null && (
+            {totalOrders != null && (
               <div>
                 <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Orders</div>
-                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{customer.totalOrders}</div>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{totalOrders}</div>
               </div>
             )}
-            {customer.totalSpent != null && (
+            {totalBookings != null && totalBookings > 0 && (
               <div>
-                <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Total Spent</div>
-                <div style={{ fontWeight: 700, color: 'var(--primary)' }}>D {Number(customer.totalSpent).toFixed(0)}</div>
+                <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Bookings</div>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{totalBookings}</div>
               </div>
             )}
-            {customer.createdAt && (
+            {firstSeen && (
               <div>
                 <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>First Seen</div>
                 <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)' }}>
-                  {new Date(customer.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {new Date(firstSeen).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </div>
               </div>
             )}
-            {customer.lastOrderDate && (
+            {lastSeen && (
               <div>
-                <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Last Order</div>
+                <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Last Seen</div>
                 <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)' }}>
-                  {new Date(customer.lastOrderDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                  {new Date(lastSeen).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                 </div>
               </div>
             )}
-            {customer.preferredItems?.length > 0 && (
+            {favoriteItems.length > 0 && (
               <div>
                 <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Favourite</div>
-                <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)' }}>{customer.preferredItems[0]}</div>
+                <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)' }}>{favoriteItems[0].name}</div>
               </div>
             )}
           </div>

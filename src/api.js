@@ -62,6 +62,8 @@ export const dashApi = {
   orders:    (p = {}) => http.get(`/dashboard/${getTenantId()}/orders`, { params: p }),
   bookings:  (p = {}) => http.get(`/dashboard/${getTenantId()}/bookings`, { params: p }),
   analytics: (days = 30) => http.get(`/dashboard/${getTenantId()}/analytics`, { params: { days } }),
+  // GET /dashboard/:tenantId/analytics/timeseries → day-by-day breakdown + top items
+  analyticsTimeseries: (days = 30) => http.get(`/dashboard/${getTenantId()}/analytics/timeseries`, { params: { days } }),
   customers: (p = {}) => http.get(`/dashboard/${getTenantId()}/customers`, { params: p }),
   // ⚠ /customer/ prefix required — avoids Express matching "customer" as :orderId param
   ordersByCustomer: (phone) => http.get(`/dashboard/${getTenantId()}/orders/customer/${encodeURIComponent(phone)}`),
@@ -176,6 +178,10 @@ export const adminApi = {
 
   // GET /admin/tenants → { tenants, count }
   listTenants: (p = {}) => adminHttp.get('/admin/tenants', { params: p }),
+
+  // GET /admin/tenants/stats → { tenants:{total,byStatus}, whatsapp:{...}, connectionRequests:{...} }
+  // Single-aggregation platform stats — cheaper than recomputing from the full tenant list.
+  getPlatformStats: () => adminHttp.get('/admin/tenants/stats'),
 
   // GET /admin/tenants/:id → { tenant, business }
   // ⚠ accessToken and verifyToken are ALWAYS stripped server-side
