@@ -30,7 +30,7 @@ function QuickAction({ icon: Icon, label, desc, to, color = 'green' }) {
       onMouseLeave={() => setHovered(false)}
     >
       <div style={{
-        width: 38, height: 38, borderRadius: 10,
+        width: 38, height: 38, borderRadius: 'var(--r-bubble)',
         background: 'rgba(255,255,255,0.7)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
       }}>
@@ -171,7 +171,7 @@ export default function DashboardPage() {
             background: 'var(--primary-dim)', border: '1.5px solid var(--border-accent)',
             borderRadius: 'var(--r-lg)',
           }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(10,122,60,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 'var(--r-bubble)', background: 'rgba(10,122,60,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Zap size={18} color="var(--primary)" />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -189,7 +189,7 @@ export default function DashboardPage() {
             background: 'var(--amber-dim)', border: '1.5px solid rgba(217,119,6,0.22)',
             borderRadius: 'var(--r-lg)',
           }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(217,119,6,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 'var(--r-bubble)', background: 'rgba(217,119,6,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Zap size={18} color="var(--amber)" />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>

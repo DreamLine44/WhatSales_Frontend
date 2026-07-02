@@ -17,13 +17,19 @@ function NavItem({ to, icon: Icon, label, end = false, badge, onClick }) {
       to={to} end={end} onClick={onClick}
       style={({ isActive }) => ({
         display: 'flex', alignItems: 'center', gap: 10,
-        padding: '8px 11px', borderRadius: 9,
+        padding: '8px 11px 8px 9px', borderRadius: 9,
         fontSize: '0.845rem', fontWeight: isActive ? 700 : 500,
         color: isActive ? '#fff' : 'rgba(255,255,255,0.62)',
         background: isActive ? 'rgba(255,255,255,0.14)' : 'transparent',
         textDecoration: 'none', transition: 'all 0.14s',
         marginBottom: 1, position: 'relative',
-        border: isActive ? '1px solid rgba(255,255,255,0.1)' : '1px solid transparent',
+        /* [REDESIGN v4] Gold rail replaces the plain white border on the active
+           item — a small, consistent brand signature instead of a generic
+           highlight, echoed by the gold WA "Ready" pill and hero accents. */
+        borderLeft: isActive ? '2.5px solid var(--gold)' : '2.5px solid transparent',
+        borderTop: isActive ? '1px solid rgba(255,255,255,0.1)' : '1px solid transparent',
+        borderRight: isActive ? '1px solid rgba(255,255,255,0.1)' : '1px solid transparent',
+        borderBottom: isActive ? '1px solid rgba(255,255,255,0.1)' : '1px solid transparent',
       })}
     >
       {({ isActive }) => (
@@ -60,23 +66,30 @@ function NavSection({ label, children }) {
 }
 
 function WaPill({ whatsapp, status }) {
-  const active = !!(whatsapp?.connected || (status === 'ACTIVE' && whatsapp?.phoneNumberId));
+  // [REDESIGN v4] Three distinct visual states instead of two — "Ready" (creds
+  // saved, not yet verified live) now reads as gold/in-progress rather than
+  // sharing the same green as a fully live bot, which previously made it easy
+  // to mistake a not-yet-verified connection for a working one at a glance.
+  const connected = !!whatsapp?.connected;
+  const ready = !connected && status === 'ACTIVE' && !!whatsapp?.phoneNumberId;
+  const color = connected ? '#4ade80' : ready ? 'var(--gold)' : 'rgba(255,255,255,0.38)';
+  const bg = connected ? 'rgba(74,222,128,0.12)' : ready ? 'rgba(224,172,79,0.14)' : 'rgba(255,255,255,0.06)';
+  const border = connected ? 'rgba(74,222,128,0.28)' : ready ? 'rgba(224,172,79,0.3)' : 'rgba(255,255,255,0.09)';
   return (
     <div style={{
       display: 'inline-flex', alignItems: 'center', gap: 6,
-      background: active ? 'rgba(74,222,128,0.12)' : 'rgba(255,255,255,0.06)',
-      border: `1px solid ${active ? 'rgba(74,222,128,0.28)' : 'rgba(255,255,255,0.09)'}`,
+      background: bg, border: `1px solid ${border}`,
       borderRadius: 99, padding: '4px 9px',
       fontSize: '0.68rem', fontWeight: 600,
-      color: active ? '#4ade80' : 'rgba(255,255,255,0.38)',
+      color,
     }}>
       <span style={{
         width: 5, height: 5, borderRadius: '50%',
-        background: active ? '#4ade80' : 'rgba(255,255,255,0.22)',
-        animation: active ? 'pulse 2s infinite' : 'none',
+        background: connected ? '#4ade80' : ready ? 'var(--gold)' : 'rgba(255,255,255,0.22)',
+        animation: connected ? 'pulse 2s infinite' : 'none',
         flexShrink: 0,
       }} />
-      {active ? (whatsapp?.connected ? 'Live' : 'Ready') : 'Offline'}
+      {connected ? 'Live' : ready ? 'Ready' : 'Offline'}
     </div>
   );
 }
@@ -87,9 +100,9 @@ function PlanBadge({ plan }) {
     <span style={{
       fontSize: '0.57rem', fontWeight: 800, letterSpacing: '0.08em',
       padding: '2px 6px', borderRadius: 99,
-      background: isPro ? 'rgba(217,119,6,0.22)' : 'rgba(255,255,255,0.09)',
-      color: isPro ? '#fbbf24' : 'rgba(255,255,255,0.35)',
-      border: `1px solid ${isPro ? 'rgba(217,119,6,0.28)' : 'rgba(255,255,255,0.09)'}`,
+      background: isPro ? 'rgba(224,172,79,0.22)' : 'rgba(255,255,255,0.09)',
+      color: isPro ? '#e0ac4f' : 'rgba(255,255,255,0.35)',
+      border: `1px solid ${isPro ? 'rgba(224,172,79,0.3)' : 'rgba(255,255,255,0.09)'}`,
     }}>
       {plan || 'FREE'}
     </span>

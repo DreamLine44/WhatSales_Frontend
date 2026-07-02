@@ -31,24 +31,44 @@ const SETUP_STEPS = [
 // [FIX-2] ACTIVE + phoneNumberId = step 5 (Bot Activated), not step 4 (OTP Verification).
 // Previously returned 4 which put the spinner on the OTP step for a live tenant.
 // onboardingStep >= 3 (verified) + ACTIVE = also step 5.
-function getStepIndex(wa, tenantStatus, onboardingStep) {
+//
+// [FIX-WA-SELFSERVICE] requestStatus (from GET /api/whatsapp/request/status) is a genuine,
+// backend-confirmed signal where available — it's auto-advanced to 'connected' as a side
+// effect of a successful Meta verification, independent of the onboardingStep guesswork
+// below. Treat it as a FLOOR (Math.max), never a ceiling: it can only push the displayed
+// step forward when it confirms more progress than the other heuristics inferred, never
+// backward. Most admin-onboarded tenants won't have a request record at all (requestStatus
+// null) since credentials are typically entered directly by the admin, not self-submitted —
+// that's expected and simply contributes no floor.
+function getStepIndex(wa, tenantStatus, onboardingStep, requestStatus) {
   if (!wa) return 0;
+  let idx;
   // connected=true is set by AuthContext when onboardingStep≥3 is inferred, or by
   // buildUserFromResponse carrying it forward from a prior session. Treat as terminal.
-  if (wa.connected === true) return 5;
-  // Use authoritative onboardingStep when it's a real number (> 1 = admin-managed).
-  if (typeof onboardingStep === 'number' && onboardingStep > 1) {
+  if (wa.connected === true) {
+    idx = 5;
+  } else if (typeof onboardingStep === 'number' && onboardingStep > 1) {
+    // Use authoritative onboardingStep when it's a real number (> 1 = admin-managed).
     // Step 3 = verified by Meta; if tenant is also ACTIVE, the bot is live.
-    if (onboardingStep >= 3 && tenantStatus === 'ACTIVE') return 5;
-    if (onboardingStep >= 3) return 4; // verified but not yet activated
-    if (onboardingStep === 2) return 2;
-    return 1;
+    if (onboardingStep >= 3 && tenantStatus === 'ACTIVE') idx = 5;
+    else if (onboardingStep >= 3) idx = 4; // verified but not yet activated
+    else if (onboardingStep === 2) idx = 2;
+    else idx = 1;
+  } else if (tenantStatus === 'ACTIVE' && wa.phoneNumberId) {
+    // Fallback inference from fields we can actually read.
+    // ACTIVE + phoneNumberId = bot is live (step 5), not just OTP pending (step 4).
+    idx = 5;
+  } else if (wa.phoneNumberId) {
+    idx = 2;
+  } else {
+    idx = 1;
   }
-  // Fallback inference from fields we can actually read.
-  // ACTIVE + phoneNumberId = bot is live (step 5), not just OTP pending (step 4).
-  if (tenantStatus === 'ACTIVE' && wa.phoneNumberId) return 5;
-  if (wa.phoneNumberId) return 2;
-  return 1;
+
+  const requestFloor =
+    requestStatus === 'connected'  ? 4 :
+    requestStatus === 'connecting' ? 3 :
+    (requestStatus === 'contacted' || requestStatus === 'pending') ? 2 : 0;
+  return Math.max(idx, requestFloor);
 }
 
 function StepItem({ step, status, isLast }) {
@@ -97,12 +117,19 @@ export default function WhatsAppPage() {
   // but that snapshot may be stale. A direct GET /business/:id gives the live value.
   const [liveBiz, setLiveBiz] = useState(null);
   const [bizLoading, setBizLoading] = useState(true);
+  // [FIX-WA-SELFSERVICE] Poll the tenant's own connection-request status, if one exists.
+  // A 404 here just means this tenant never submitted a self-service request (the normal
+  // case for admin-onboarded tenants) — not an error, so we swallow it silently.
+  const [requestStatus, setRequestStatus] = useState(null);
 
   useEffect(() => {
     bizApi.get()
       .then(r => setLiveBiz(r.data?.business || r.data || {}))
       .catch(() => setLiveBiz(null))
       .finally(() => setBizLoading(false));
+    bizApi.connectionRequestStatus()
+      .then(r => setRequestStatus(r.data?.status || r.data?.request?.status || null))
+      .catch(() => setRequestStatus(null));
   }, []);
 
   // Prefer live data over cached user object for WhatsApp fields.
@@ -121,7 +148,8 @@ export default function WhatsAppPage() {
 
   const tenantStatus   = user?.status || 'ACTIVE';
   const onboardingStep = user?.onboardingStep ?? null;
-  const stepIdx        = getStepIndex(wa, tenantStatus, onboardingStep);
+  const stepIdx        = getStepIndex(wa, tenantStatus, onboardingStep, requestStatus);
+  const isRejected     = requestStatus === 'rejected';
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -130,6 +158,9 @@ export default function WhatsAppPage() {
       await refreshUser();
       const r = await bizApi.get();
       setLiveBiz(r.data?.business || r.data || {});
+      bizApi.connectionRequestStatus()
+        .then(rr => setRequestStatus(rr.data?.status || rr.data?.request?.status || null))
+        .catch(() => setRequestStatus(null));
       toast.success('Status refreshed');
     } catch (err) {
       toast.error(err.message || 'Failed to refresh');
@@ -158,10 +189,12 @@ export default function WhatsAppPage() {
       {/* Connection status banner */}
       {!bizLoading && (
         <InfoBanner
-          type={isConnected ? 'success' : isConfigured ? 'warning' : 'info'}
+          type={isRejected ? 'error' : isConnected ? 'success' : isConfigured ? 'warning' : 'info'}
           style={{ marginBottom: 20 }}
         >
-          {isConnected
+          {isRejected
+            ? '❌ Your WhatsApp connection request was not approved. Contact support@whatsales.app for details.'
+            : isConnected
             ? '✅ Your WhatsApp number is connected and the bot is active.'
             : isConfigured
             ? '⏳ Your WhatsApp credentials are saved. Your account is pending activation by our team.'

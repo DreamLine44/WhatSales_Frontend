@@ -99,23 +99,27 @@ export default function CustomersPage() {
   // Prevents the page-change effect from double-loading when the debounce handler
   // calls setPage(1) and load(1, val) in the same tick.
   const skipEffectRef = useRef(false);
+  const requestIdRef = useRef(0);
   const LIMIT = 30;
 
   const load = useCallback((p, q) => {
     setLoading(true);
     setError(null);
+    const reqId = ++requestIdRef.current;
     const params = { page: p, limit: LIMIT };
     if (q?.trim()) params.search = q.trim();
     dashApi.customers(params)
       .then(r => {
+        if (reqId !== requestIdRef.current) return; // superseded by a newer request
         setCustomers(r.data.customers || []);
         setTotal(r.data.total || 0);
       })
       .catch(err => {
+        if (reqId !== requestIdRef.current) return;
         setError(err.message);
         toast.error(err.message);
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (reqId === requestIdRef.current) setLoading(false); });
   }, []);
 
   useEffect(() => {

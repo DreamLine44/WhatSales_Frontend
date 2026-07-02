@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Calendar, RefreshCw, ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import { dashApi, bookingApi } from '../api.js';
 import { PageHeader, Card, StatusBadge, Btn, EmptyState, Spinner, Select, Pagination, FilterBar, InlineSelect } from '../components/ui.jsx';
@@ -101,16 +101,24 @@ function BookingsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const requestIdRef = useRef(0);
   const LIMIT = 20;
 
   const load = useCallback((p, sf) => {
     setLoading(true);
     setError(null);
+    const reqId = ++requestIdRef.current;
     // GET /dashboard/:id/bookings — list bookings (dashboard read route)
     dashApi.bookings({ status: sf || undefined, page: p, limit: LIMIT })
-      .then(r => { setBookings(r.data.bookings || []); setTotal(r.data.total || 0); })
-      .catch(err => { setError(err.message); toast.error(err.message); })
-      .finally(() => setLoading(false));
+      .then(r => {
+        if (reqId !== requestIdRef.current) return; // superseded by a newer request
+        setBookings(r.data.bookings || []); setTotal(r.data.total || 0);
+      })
+      .catch(err => {
+        if (reqId !== requestIdRef.current) return;
+        setError(err.message); toast.error(err.message);
+      })
+      .finally(() => { if (reqId === requestIdRef.current) setLoading(false); });
   }, []);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps

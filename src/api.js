@@ -82,6 +82,15 @@ export const bizApi = {
   // GET /business/cloudinary-status → { cloudinaryEnabled: bool } — check before
   // showing image-upload UI so a 503 "not configured" doesn't surprise the user.
   cloudinaryStatus: () => http.get(`/business/cloudinary-status`),
+  // [FIX-WA-SELFSERVICE] GET /api/whatsapp/request/status — the tenant's own
+  // WhatsAppConnectionRequest status (pending/contacted/connecting/connected/rejected).
+  // This is a SEPARATE, loosely-linked system from Tenant.onboardingStep — it only
+  // exists for tenants who went through the self-service "request a connection" flow.
+  // Tenants onboarded directly by an admin (credentials entered at tenant creation,
+  // which is the normal path per current operating practice) will typically get a
+  // 404 here — that's expected, not an error, and callers should treat it as "no
+  // request on file" rather than surfacing it to the user.
+  connectionRequestStatus: () => http.get('/api/whatsapp/request/status'),
 };
 
 // ── Menu CRUD — /dashboard/:tenantId/menu ─────────────────────────────────────

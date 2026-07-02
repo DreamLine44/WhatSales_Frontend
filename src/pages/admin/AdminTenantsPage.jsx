@@ -1248,19 +1248,29 @@ export default function AdminTenantsPage() {
   const [showCreate, setShowCreate]     = useState(false);
   // [FIX-PAGE-1] Debounce search so we don't hammer the API on every keystroke
   const searchTimer = useRef(null);
+  // [FIX-RACE-1] Always read the *latest* statusFilter inside the debounced timer callback —
+  // without this ref, the timer closes over the statusFilter value from the render at
+  // keystroke time, so clicking a status chip while a search debounce is pending would let
+  // the delayed request overwrite the correct results with a stale filter combo.
+  const statusFilterRef = useRef(statusFilter);
+  // [FIX-RACE-2] Guard against out-of-order network responses — only the response to the
+  // most recently issued request is applied to state.
+  const requestIdRef = useRef(0);
 
   const fetchTenants = useCallback((q, sf) => {
     setLoading(true);
+    const reqId = ++requestIdRef.current;
     const params = {};
     if (q?.trim())  params.name   = q.trim();
     if (sf)         params.status = sf;
     adminApi.listTenants(params)
       .then(r => {
+        if (reqId !== requestIdRef.current) return; // stale response — a newer request superseded this one
         const list = r.data?.tenants;
         setTenants(Array.isArray(list) ? list : []);
       })
-      .catch(err => toast.error(err.message))
-      .finally(() => setLoading(false));
+      .catch(err => { if (reqId === requestIdRef.current) toast.error(err.message); })
+      .finally(() => { if (reqId === requestIdRef.current) setLoading(false); });
   }, []);
 
   // Initial load
@@ -1272,11 +1282,12 @@ export default function AdminTenantsPage() {
     const val = e.target.value;
     setSearch(val);
     clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => fetchTenants(val, statusFilter), 400);
+    searchTimer.current = setTimeout(() => fetchTenants(val, statusFilterRef.current), 400);
   };
 
   const handleStatusFilter = (sf) => {
     setStatusFilter(sf);
+    statusFilterRef.current = sf;
     fetchTenants(search, sf);
   };
 

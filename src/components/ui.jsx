@@ -296,6 +296,7 @@ export function Badge({ color = 'green', children, dot = false, style = {} }) {
     purple: { bg: 'var(--badge-purple-bg)', text: 'var(--badge-purple-text)' },
     gray:   { bg: 'var(--bg-overlay)',      text: 'var(--text-muted)' },
     teal:   { bg: 'var(--badge-teal-bg)',   text: 'var(--badge-teal-text)' },
+    gold:   { bg: 'var(--gold-dim)',        text: 'var(--gold)' },
   };
   const c = colors[color] || colors.gray;
   return (
@@ -326,8 +327,38 @@ const STATUS_MAP = {
   payment_failed: { color: 'red', label: 'Payment Failed' },
   payment_pending_verification: { color: 'amber', label: 'Awaiting Payment' },
 };
+// [REDESIGN v4] Order/booking progress echoes WhatsApp's own read-receipt
+// ticks — a single grounded detail tying status language back to the channel
+// this whole product runs on, instead of a generic colored dot for everything.
+const TICK_STATUS = {
+  confirmed: 1, preparing: 1, ready: 1, out_for_delivery: 1,
+  completed: 2, delivered: 2,
+};
+function StatusTicks({ count }) {
+  return (
+    <svg width={count === 2 ? 14 : 9} height={9} viewBox={`0 0 ${count === 2 ? 14 : 9} 9`} style={{ flexShrink: 0 }}>
+      <path d="M0.5 4.5L3 7L8.5 1" stroke="#53bdeb" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      {count === 2 && <path d="M5 4.5L7.5 7L13 1" stroke="#53bdeb" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />}
+    </svg>
+  );
+}
 export function StatusBadge({ status, style }) {
   const s = STATUS_MAP[status] || { color: 'gray', label: status || 'Unknown' };
+  const ticks = TICK_STATUS[status];
+  if (ticks) {
+    return (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5,
+        fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px',
+        borderRadius: 'var(--r-full)',
+        background: 'var(--badge-green-bg)', color: 'var(--badge-green-text)',
+        letterSpacing: '0.01em', ...style,
+      }}>
+        <StatusTicks count={ticks} />
+        {s.label}
+      </span>
+    );
+  }
   return <Badge color={s.color} dot style={style}>{s.label}</Badge>;
 }
 
@@ -342,7 +373,7 @@ export function PageHeader({ title, subtitle, actions, icon: Icon }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0, flex: '1 1 0' }}>
           {Icon && (
             <div style={{
-              width: 38, height: 38, borderRadius: 'var(--r-md)',
+              width: 38, height: 38, borderRadius: 'var(--r-bubble)',
               background: 'var(--primary-dim)', border: '1.5px solid var(--border-accent)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
             }}>
@@ -405,6 +436,7 @@ export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend
     purple: { icon: 'rgba(124,58,237,0.1)', text: '#7c3aed', border: 'rgba(124,58,237,0.18)' },
     red:    { icon: 'rgba(220,38,38,0.1)',  text: '#dc2626', border: 'rgba(220,38,38,0.18)' },
     teal:   { icon: 'rgba(15,118,110,0.1)', text: '#0f766e', border: 'rgba(15,118,110,0.18)' },
+    gold:   { icon: 'var(--gold-dim)', text: 'var(--gold)', border: 'var(--gold-mid)' },
     gray:   { icon: 'var(--bg-overlay)', text: 'var(--text-muted)', border: 'var(--border)' },
   };
   const c = colors[color] || colors.green;
@@ -424,7 +456,7 @@ export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend
     >
       {Icon && (
         <div style={{
-          width: 40, height: 40, borderRadius: 10,
+          width: 40, height: 40, borderRadius: 'var(--r-bubble)',
           background: c.icon, border: `1.5px solid ${c.border}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         }}>

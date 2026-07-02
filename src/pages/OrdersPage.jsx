@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Clock, Package, DollarSign } from 'lucide-react';
 import { dashApi, orderApi } from '../api.js';
 import { PageHeader, Card, StatusBadge, Btn, EmptyState, Spinner, Select, FilterBar, InlineSelect, Pagination } from '../components/ui.jsx';
@@ -46,7 +46,7 @@ function OrderRow({ order, onUpdate }) {
         cursor: 'pointer', width: '100%', textAlign: 'left', background: 'none', border: 'none',
       }}>
         <div style={{
-          width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+          width: 38, height: 38, borderRadius: 'var(--r-bubble)', flexShrink: 0,
           background: isNew ? 'var(--primary-dim)' : 'var(--bg-overlay)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           border: `1.5px solid ${isNew ? 'var(--border-accent)' : 'var(--border)'}`,
@@ -131,16 +131,24 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const requestIdRef = useRef(0);
   const LIMIT = 20;
 
   const load = useCallback((p, sf) => {
     setLoading(true);
     setError(null);
+    const reqId = ++requestIdRef.current;
     // GET /dashboard/:id/orders — list orders (dashboard read route)
     dashApi.orders({ status: sf || undefined, page: p, limit: LIMIT })
-      .then(r => { setOrders(r.data.orders || []); setTotal(r.data.total || 0); })
-      .catch(err => { setError(err.message); toast.error(err.message); })
-      .finally(() => setLoading(false));
+      .then(r => {
+        if (reqId !== requestIdRef.current) return; // superseded by a newer request
+        setOrders(r.data.orders || []); setTotal(r.data.total || 0);
+      })
+      .catch(err => {
+        if (reqId !== requestIdRef.current) return;
+        setError(err.message); toast.error(err.message);
+      })
+      .finally(() => { if (reqId === requestIdRef.current) setLoading(false); });
   }, []);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps

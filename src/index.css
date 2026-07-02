@@ -1,4 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* [REDESIGN v4] Space Grotesk added as the display face — used for headings and
+   large numerals (stat cards, revenue, prices). Its squarer terminals and tall
+   numerals give WhatSales a distinct "ledger" identity vs. the generic system-ui
+   look most SaaS dashboards default to. Jakarta stays for body/UI text —
+   legible at small sizes, which matters since this is used heavily on phones. */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -30,6 +35,14 @@
   --amber:      #d97706;
   --amber-dim:  rgba(217,119,6,0.09);
   --amber-mid:  rgba(217,119,6,0.18);
+  /* [REDESIGN v4] Gold is a distinct token from amber: amber stays reserved for
+     warning/pending semantics; gold is the decorative secondary brand accent
+     (used on hero highlights, the active-nav rail, key CTAs) — a market-gold
+     paired with forest green rather than reusing the warning color as a brand
+     color, which was muddling "this needs attention" with "this is important". */
+  --gold:       #b8862f;
+  --gold-dim:   rgba(184,134,47,0.1);
+  --gold-mid:   rgba(184,134,47,0.2);
   --red:        #dc2626;
   --red-dim:    rgba(220,38,38,0.09);
   --blue:       #2563eb;
@@ -85,9 +98,14 @@
   --shadow-sm: var(--sh-sm);  --shadow-md: var(--sh-md);  --shadow-lg: var(--sh-lg);
   --radius-sm: var(--r-sm);   --radius-md: var(--r-md);   --radius-lg: var(--r-lg);
   --radius-xl: var(--r-xl);   --radius-full: var(--r-full);
-  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', 'Plus Jakarta Sans', system-ui, sans-serif;
   --font-body:    'Plus Jakarta Sans', system-ui, sans-serif;
   --font-mono:    'JetBrains Mono', monospace;
+
+  /* [REDESIGN v4] Signature "bubble" corner — one asymmetric radius, echoing a
+     WhatsApp message tail. Used sparingly (icon wells, the active-nav rail,
+     the hero stat) — never on every card, per "spend your boldness in one place". */
+  --r-bubble: 20px 20px 20px 6px;
 
   /* Layout */
   --sidebar-w:    256px;
@@ -135,6 +153,9 @@
     --amber:     #fbbf24;
     --amber-dim: rgba(251,191,36,0.1);
     --amber-mid: rgba(251,191,36,0.2);
+    --gold:      #e0ac4f;
+    --gold-dim:  rgba(224,172,79,0.12);
+    --gold-mid:  rgba(224,172,79,0.22);
     --red:       #f87171;
     --red-dim:   rgba(248,113,113,0.1);
     --blue:      #60a5fa;

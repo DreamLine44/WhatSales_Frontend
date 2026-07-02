@@ -19,13 +19,18 @@ function NavItem({ to, icon: Icon, label, end, onClick }) {
       to={to} end={end} onClick={onClick}
       style={({ isActive }) => ({
         display: 'flex', alignItems: 'center', gap: 11,
-        padding: '10px 13px', borderRadius: 10,
+        padding: '10px 13px 10px 11px', borderRadius: 10,
         fontSize: '0.875rem', fontWeight: isActive ? 700 : 500,
         color: isActive ? '#fff' : 'rgba(255,255,255,0.55)',
         background: isActive ? 'rgba(255,255,255,0.13)' : 'transparent',
         textDecoration: 'none', transition: 'all 0.14s',
         marginBottom: 2, letterSpacing: '-0.01em',
-        border: isActive ? '1px solid rgba(255,255,255,0.12)' : '1px solid transparent',
+        /* [REDESIGN v4] Same gold rail signature as the Business Admin sidebar,
+           so the two portals read as one product family, not two apps. */
+        borderLeft: isActive ? '2.5px solid var(--gold)' : '2.5px solid transparent',
+        borderTop: isActive ? '1px solid rgba(255,255,255,0.12)' : '1px solid transparent',
+        borderRight: isActive ? '1px solid rgba(255,255,255,0.12)' : '1px solid transparent',
+        borderBottom: isActive ? '1px solid rgba(255,255,255,0.12)' : '1px solid transparent',
         boxShadow: isActive ? '0 1px 6px rgba(0,0,0,0.18)' : 'none',
       })}
     >
