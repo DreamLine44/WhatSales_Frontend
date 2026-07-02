@@ -42,9 +42,10 @@ adminHttp.interceptors.response.use(r => r, errorInterceptor);
 
 // ── Auth (tenant login) ───────────────────────────────────────────────────────
 // [FIX-AUTH-API] GET /business/:tenantId — authenticated with tenant API key
-// Returns { business: biz } — AuthContext extracts biz and synthesises user object.
-// NOTE: The Tenant document (whatsapp.connected, plan, onboardingStep) is NOT
-//       accessible with a tenant API key. See AuthContext for the synthesis logic.
+// Returns { business: biz, tenantStatus }. [AUDIT-FIX-17] tenantStatus now carries
+// the real Tenant fields (status, onboardingStep, whatsapp.connected) — AuthContext
+// uses it directly when present, falling back to the old inference logic only for
+// tenants on a pre-fix backend deployment. See AuthContext for details.
 export const authApi = {
   getTenantInfo: async (tenantId, apiKey) => {
     const res = await axios.get(`${BASE_URL}/business/${tenantId}`, {
@@ -70,7 +71,7 @@ export const dashApi = {
 };
 
 // ── Business config ───────────────────────────────────────────────────────────
-// GET  /business/:tenantId   → { business: biz }
+// GET  /business/:tenantId   → { business: biz, tenantStatus }  (tenantStatus added in AUDIT-FIX-17)
 // PUT  /business/:tenantId   → { business: biz }   (full replace — avoid for partial edits)
 // GET  /dashboard/:tenantId/settings → { business }
 // PATCH /dashboard/:tenantId/settings → { ok, business }  ✅ use this for all partial saves

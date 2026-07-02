@@ -21,19 +21,45 @@ const BASE_URL = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up
 // We signal "configured but unknown" via phoneNumberId presence. DashboardPage's
 // whatsappActive = tenantActive && whatsappConfigured covers this correctly.
 //
-// [FIX-1] prevUser is passed on refresh so we never regress a previously-inferred
-// onboardingStep (e.g. step 3 after verification would drop back to 2 on next restore
-// because the /business endpoint doesn't carry onboardingStep at all).
-// The rule: only advance the step, never retreat it.
-function buildUserFromResponse(tenantId, businessData, prevUser = null) {
+// [AUDIT-FIX-17] Backend now returns a `tenantStatus` block alongside `business`
+// (GET /business/:tenantId — see businessController.getBusinessConfig /
+// safeTenantStatus). It's sourced from the real Tenant document via req.tenant,
+// so status/onboardingStep/whatsapp.connected are now authoritative instead of
+// guessed. This replaces the old inference heuristics below, which could never
+// organically reach "connected: true" for an admin-onboarded tenant since that
+// field simply wasn't visible to any tenant-facing endpoint before this fix.
+//
+// prevUser is kept as a fallback only, for the (unlikely) case this is pointed at
+// an older backend deployment that hasn't picked up AUDIT-FIX-17 yet — in that
+// case tenantStatus will be null/undefined and we fall back to the old guesswork
+// so the app doesn't hard-break.
+function buildUserFromResponse(tenantId, businessData, tenantStatus, prevUser = null) {
   const biz = businessData || {};
 
-  // Infer minimum onboardingStep from fields visible in BusinessConfig.
-  // phoneNumberId present → at least step 2 (credentials saved by admin).
-  // We never lower an already-known step — if prevUser has step 3 (verified),
-  // keep it even though /business still only shows phoneNumberId.
+  if (tenantStatus) {
+    return {
+      tenantId,
+      name:           biz.name         || 'My Business',
+      businessMode:   biz.businessMode || 'RESTAURANT',
+      adminPhone:     biz.adminPhone   || '',
+      whatsapp: {
+        phoneNumberId: tenantStatus.whatsapp?.phoneNumberId || biz.phoneNumberId || undefined,
+        phone:         tenantStatus.whatsapp?.phone || undefined,
+        connected:     tenantStatus.whatsapp?.connected === true,
+      },
+      plan:           tenantStatus.plan   || 'FREE',
+      // [AUDIT] Default to PENDING, not ACTIVE, when status is missing — PENDING
+      // is the tenant's real starting status ("Bot will not respond" — see
+      // AdminTenantsPage STATUS_META), so this fails toward "not live" rather
+      // than optimistically claiming a status we don't actually know.
+      status:         tenantStatus.status || 'PENDING',
+      onboardingStep: tenantStatus.onboardingStep ?? 0,
+    };
+  }
+
+  // ── Legacy fallback (pre-AUDIT-FIX-17 backend) ──────────────────────────────
   const inferredStep = biz.phoneNumberId ? 2 : 1;
-  const prevStep     = prevUser?.onboardingStep ?? 0;
+  const prevStep      = prevUser?.onboardingStep ?? 0;
   const onboardingStep = Math.max(inferredStep, prevStep);
 
   return {
@@ -41,20 +67,19 @@ function buildUserFromResponse(tenantId, businessData, prevUser = null) {
     name:           biz.name         || 'My Business',
     businessMode:   biz.businessMode || 'RESTAURANT',
     adminPhone:     biz.adminPhone   || '',
-    // Synthesise whatsapp info from BusinessConfig.phoneNumberId
-    // (backend keeps this in sync with Tenant.whatsapp.phoneNumberId via updateTenant).
-    // [FIX-1] connected: treat ACTIVE + verified (step≥3) as effectively connected so
-    // WhatsAppPage can reach the "Bot Activated" state without a super-admin endpoint.
     whatsapp: biz.phoneNumberId
       ? {
           phoneNumberId: biz.phoneNumberId,
-          // Carry forward any connected=true that was set during this session, OR
-          // infer it when onboardingStep is already ≥ 3 (verified by admin).
           connected: (prevUser?.whatsapp?.connected === true) || (onboardingStep >= 3),
         }
       : {},
-    plan:           'FREE',           // not exposed to tenant key — safe default
-    status:         'ACTIVE',         // tenant can authenticate ∴ key is active
+    // [AUDIT] Previously hardcoded 'ACTIVE' on the reasoning that "the tenant
+    // can authenticate, so the key is active" — but tenant.status and API key
+    // validity are different things; a tenant can authenticate while status is
+    // still PENDING (the real starting default — see AdminTenantsPage). Default
+    // to PENDING here too, for the same fail-toward-not-live reason as above.
+    plan:           'FREE',
+    status:         'PENDING',
     onboardingStep,
   };
 }
@@ -65,22 +90,27 @@ export function AuthProvider({ children }) {
   const [error, setError]     = useState(null);
 
   // Fetch business config with the stored (or supplied) credentials
+  // [AUDIT-FIX-17] Backend now also returns `tenantStatus` — return both instead
+  // of discarding everything except `business`.
   const fetchBusiness = useCallback(async (tenantId, apiKey) => {
     const res = await axios.get(`${BASE_URL}/business/${tenantId}`, {
       headers: { 'x-api-key': apiKey },
       timeout: 12000,
     });
-    // Backend returns { business: biz }
-    return res.data?.business || res.data || {};
+    return {
+      biz:           res.data?.business || {},
+      tenantStatus:  res.data?.tenantStatus || null,
+    };
   }, []);
 
   // [FIX-AUTH-RESTORE] Define restore with useCallback BEFORE useEffect.
   // [FIX-7] Pass the current user snapshot as prevUser so buildUserFromResponse
-  // can carry forward onboardingStep and connected without regressing them.
+  // can carry forward onboardingStep and connected without regressing them
+  // (only relevant on the legacy-fallback path — see buildUserFromResponse).
   const restore = useCallback(async (tenantId, apiKey) => {
     try {
-      const biz = await fetchBusiness(tenantId, apiKey);
-      setUser(prev => buildUserFromResponse(tenantId, biz, prev));
+      const { biz, tenantStatus } = await fetchBusiness(tenantId, apiKey);
+      setUser(prev => buildUserFromResponse(tenantId, biz, tenantStatus, prev));
     } catch {
       // Session expired or invalid — clear and force re-login
       localStorage.removeItem('ws_tenant_id');
@@ -104,10 +134,10 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (tenantId, apiKey) => {
     setError(null);
-    const biz = await fetchBusiness(tenantId.trim(), apiKey.trim());
+    const { biz, tenantStatus } = await fetchBusiness(tenantId.trim(), apiKey.trim());
     localStorage.setItem('ws_tenant_id', tenantId.trim());
     localStorage.setItem('ws_api_key', apiKey.trim());
-    setUser(buildUserFromResponse(tenantId.trim(), biz));
+    setUser(buildUserFromResponse(tenantId.trim(), biz, tenantStatus));
   }, [fetchBusiness]);
 
   const logout = useCallback(() => {

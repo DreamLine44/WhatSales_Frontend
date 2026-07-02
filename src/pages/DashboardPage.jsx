@@ -122,10 +122,16 @@ export default function DashboardPage() {
   }, [load]);
 
   const d = overview?.last30Days || {};
+  // [AUDIT] whatsapp.connected and tenant.status === 'ACTIVE' are two separate,
+  // real admin actions (verify credentials with Meta, then activate the tenant
+  // — see AdminTenantsPage's activation guard). A tenant can be genuinely
+  // connected/verified and still PENDING ("Bot will not respond" per
+  // AdminTenantsPage's own status description). Both conditions are required
+  // for the bot to actually be live — connected alone is not sufficient.
   const whatsappConnected  = !!(user?.whatsapp?.connected);
   const whatsappConfigured = !!(user?.whatsapp?.phoneNumberId);
   const tenantActive       = user?.status === 'ACTIVE';
-  const whatsappActive     = whatsappConnected || (tenantActive && whatsappConfigured);
+  const whatsappActive     = whatsappConnected && tenantActive;
   const bizFromOverview = overview?.business || {};
 
   const setupItems = [

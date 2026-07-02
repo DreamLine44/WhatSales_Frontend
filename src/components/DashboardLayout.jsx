@@ -66,15 +66,19 @@ function NavSection({ label, children }) {
 }
 
 function WaPill({ whatsapp, status }) {
-  // [REDESIGN v4] Three distinct visual states instead of two — "Ready" (creds
-  // saved, not yet verified live) now reads as gold/in-progress rather than
-  // sharing the same green as a fully live bot, which previously made it easy
-  // to mistake a not-yet-verified connection for a working one at a glance.
+  // [AUDIT] "Live" requires BOTH whatsapp.connected AND status === 'ACTIVE' —
+  // verifying credentials with Meta and activating the tenant are two separate,
+  // real admin actions (see AdminTenantsPage's activation guard). A tenant can
+  // be genuinely connected/verified and still PENDING, in which case the bot
+  // will not respond to messages yet — showing "Live" here would be wrong.
+  // "Ready" now means connected (verified) but not yet activated, which is the
+  // common in-between state; a connected tenant that's already ACTIVE is Live.
   const connected = !!whatsapp?.connected;
-  const ready = !connected && status === 'ACTIVE' && !!whatsapp?.phoneNumberId;
-  const color = connected ? '#4ade80' : ready ? 'var(--gold)' : 'rgba(255,255,255,0.38)';
-  const bg = connected ? 'rgba(74,222,128,0.12)' : ready ? 'rgba(224,172,79,0.14)' : 'rgba(255,255,255,0.06)';
-  const border = connected ? 'rgba(74,222,128,0.28)' : ready ? 'rgba(224,172,79,0.3)' : 'rgba(255,255,255,0.09)';
+  const live = connected && status === 'ACTIVE';
+  const ready = connected && !live;
+  const color = live ? '#4ade80' : ready ? 'var(--gold)' : 'rgba(255,255,255,0.38)';
+  const bg = live ? 'rgba(74,222,128,0.12)' : ready ? 'rgba(224,172,79,0.14)' : 'rgba(255,255,255,0.06)';
+  const border = live ? 'rgba(74,222,128,0.28)' : ready ? 'rgba(224,172,79,0.3)' : 'rgba(255,255,255,0.09)';
   return (
     <div style={{
       display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -85,11 +89,11 @@ function WaPill({ whatsapp, status }) {
     }}>
       <span style={{
         width: 5, height: 5, borderRadius: '50%',
-        background: connected ? '#4ade80' : ready ? 'var(--gold)' : 'rgba(255,255,255,0.22)',
-        animation: connected ? 'pulse 2s infinite' : 'none',
+        background: live ? '#4ade80' : ready ? 'var(--gold)' : 'rgba(255,255,255,0.22)',
+        animation: live ? 'pulse 2s infinite' : 'none',
         flexShrink: 0,
       }} />
-      {connected ? 'Live' : ready ? 'Ready' : 'Offline'}
+      {live ? 'Live' : ready ? 'Ready' : 'Offline'}
     </div>
   );
 }
