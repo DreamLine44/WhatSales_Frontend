@@ -107,9 +107,11 @@ export const menuApi = {
   add:        (body) => http.post(`/dashboard/${getTenantId()}/menu`, body),
   update:     (itemId, body) => http.patch(`/dashboard/${getTenantId()}/menu/${itemId}`, body),
   remove:     (itemId) => http.delete(`/dashboard/${getTenantId()}/menu/${itemId}`),
-  uploadImage:(itemId, formData) => http.post(`/dashboard/${getTenantId()}/menu/${itemId}/image`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  }),
+  // [FIX-UPLOAD-1] Do NOT set Content-Type manually for FormData — axios/the
+  // browser must generate it (it includes a random multipart boundary the
+  // server's multer parser needs). Setting it by hand strips that boundary
+  // and the upload silently fails to parse server-side.
+  uploadImage:(itemId, formData) => http.post(`/dashboard/${getTenantId()}/menu/${itemId}/image`, formData),
   removeImage:(itemId) => http.delete(`/dashboard/${getTenantId()}/menu/${itemId}/image`),
   // Full replace — use menuApi.add/update/remove for atomic edits
   replaceAll: (menuItems) => http.put(`/business/${getTenantId()}/menu`, { menuItems }),

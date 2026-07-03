@@ -194,6 +194,13 @@ export default function MenuPage() {
   const [adding, setAdding]       = useState(false);
   const [form, setForm] = useState({ name: '', price: '', description: '' });
   const [saving, setSaving]       = useState(false);
+  // [FIX-MENU-IMAGES-2] Optional image attached at creation time — backend's
+  // POST /:tenantId/menu already accepts multipart with an "image" field
+  // (see addMenuItem in dashboardController.js), the create form just never
+  // offered a way to use it. newImageFile is the raw File; newImagePreview
+  // is a local blob URL for the thumbnail (revoked on reset/unmount).
+  const [newImageFile, setNewImageFile]       = useState(null);
+  const [newImagePreview, setNewImagePreview] = useState(null);
   // [FIX-MENU-IMAGES] Check whether image storage is configured on this
   // environment before offering an upload control — avoids a confusing
   // "upload failed" the first time someone tries, per Appendix C spec.
@@ -221,17 +228,45 @@ export default function MenuPage() {
     setMenuItems(prev => prev.filter(i => i._id !== deletedId));
   };
 
+  // Revoke the object URL behind the create-form image preview and clear it.
+  const clearNewImage = () => {
+    if (newImagePreview) URL.revokeObjectURL(newImagePreview);
+    setNewImageFile(null);
+    setNewImagePreview(null);
+  };
+
+  const pickNewImage = (file) => {
+    if (!file) return;
+    if (newImagePreview) URL.revokeObjectURL(newImagePreview);
+    setNewImageFile(file);
+    setNewImagePreview(URL.createObjectURL(file));
+  };
+
   const add = async () => {
     if (!form.name?.trim()) { toast.error('Name is required'); return; }
     setSaving(true);
     try {
-      const r = await menuApi.add({
-        name:        form.name.trim(),
-        price:       Number(form.price) || 0,  // ⚠ must be number
-        description: form.description || '',
-      });
+      // [FIX-MENU-IMAGES-2] When an image was attached, POST multipart so the
+      // backend's uploadSingle middleware + Cloudinary step in addMenuItem
+      // runs; otherwise keep the original plain-JSON request unchanged.
+      let payload;
+      if (newImageFile) {
+        payload = new FormData();
+        payload.append('name', form.name.trim());
+        payload.append('price', String(Number(form.price) || 0));
+        payload.append('description', form.description || '');
+        payload.append('image', newImageFile);
+      } else {
+        payload = {
+          name:        form.name.trim(),
+          price:       Number(form.price) || 0,  // ⚠ must be number
+          description: form.description || '',
+        };
+      }
+      const r = await menuApi.add(payload);
       setMenuItems(r.data?.menuItems || menuItems);
       setForm({ name: '', price: '', description: '' });
+      clearNewImage();
       setAdding(false);
       toast.success('Item added');
     } catch (err) { toast.error(err.message); }
@@ -256,9 +291,41 @@ export default function MenuPage() {
             </div>
             <Input label="Description (optional)" value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Savoury rice cooked in tomato sauce" />
+
+            {/* [FIX-MENU-IMAGES-2] Optional image at creation time, mirrors the
+                per-row control below and stays disabled with the same message
+                when Cloudinary isn't configured on this environment. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <label
+                title={cloudinaryEnabled ? 'Add a photo (optional)' : 'Image uploads not enabled'}
+                style={{
+                  width: 52, height: 52, borderRadius: 'var(--r-md)', overflow: 'hidden',
+                  border: '1.5px solid var(--border)', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', background: 'var(--bg-overlay)',
+                  cursor: cloudinaryEnabled ? 'pointer' : 'not-allowed', flexShrink: 0, position: 'relative',
+                }}
+              >
+                {newImagePreview ? (
+                  <img src={newImagePreview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  cloudinaryEnabled ? <Upload size={16} color="var(--text-ghost)" /> : <ImageIcon size={16} color="var(--text-ghost)" />
+                )}
+                <input
+                  type="file" accept="image/*" style={{ display: 'none' }}
+                  disabled={!cloudinaryEnabled}
+                  onChange={e => pickNewImage(e.target.files?.[0])}
+                />
+              </label>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                {cloudinaryEnabled
+                  ? (newImageFile ? <>{newImageFile.name} <button type="button" onClick={clearNewImage} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: 0, marginLeft: 6, font: 'inherit' }}>Remove</button></> : 'Photo (optional)')
+                  : "Photo uploads aren't turned on for this business yet"}
+              </div>
+            </div>
+
             <div style={{ display: 'flex', gap: 8 }}>
               <Btn onClick={add} loading={saving}><Check size={14} /> Add Item</Btn>
-              <Btn variant="ghost" onClick={() => setAdding(false)}>Cancel</Btn>
+              <Btn variant="ghost" onClick={() => { clearNewImage(); setAdding(false); }}>Cancel</Btn>
             </div>
           </div>
         </Card>
