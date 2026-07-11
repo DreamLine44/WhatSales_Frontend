@@ -115,7 +115,7 @@ function CreateTenantModal({ onClose, onCreate }) {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
     name: '', adminPhone: '', businessMode: 'RESTAURANT', email: '',
-    whatsapp: { phoneNumberId: '', accessToken: '', verifyToken: '', phone: '', webhookSecret: '' },
+    whatsapp: { phoneNumberId: '', accessToken: '', verifyToken: '', phone: '', webhookSecret: '', appSecret: '', catalogId: '' },
   });
   const [saving, setSaving] = useState(false);
   const [created, setCreated] = useState(null);
@@ -136,6 +136,12 @@ function CreateTenantModal({ onClose, onCreate }) {
       };
 
       // [FIX-CREATE-2] Include all WhatsApp fields including webhookSecret.
+      // [FIX-CREATE-CATALOG] Added appSecret (per-tenant HMAC verification, stored
+      // AES-256-GCM encrypted on the Tenant model) and catalogId (Meta Commerce
+      // catalog ID — required by the wacatalog auto-sync scheduler and the
+      // GET /:tenantId/wacatalog/health endpoint). Neither was previously
+      // collectible anywhere in the admin UI, so catalog sync could never be
+      // configured for a tenant without a manual DB edit.
       // Only include the block if phoneNumberId is provided; otherwise skip entirely
       // so the backend creates the tenant with empty whatsapp (configurable later).
       if (form.whatsapp.phoneNumberId.trim()) {
@@ -145,6 +151,8 @@ function CreateTenantModal({ onClose, onCreate }) {
           verifyToken:   form.whatsapp.verifyToken.trim()   || undefined,
           phone:         form.whatsapp.phone.trim()         || undefined,
           webhookSecret: form.whatsapp.webhookSecret.trim() || undefined,
+          appSecret:     form.whatsapp.appSecret.trim()     || undefined,
+          catalogId:     form.whatsapp.catalogId.trim()     || undefined,
         };
       }
 
@@ -170,6 +178,7 @@ function CreateTenantModal({ onClose, onCreate }) {
           phoneNumberId: form.whatsapp.phoneNumberId.trim(),
           phone:         form.whatsapp.phone.trim()        || undefined,
           verifyToken:   form.whatsapp.verifyToken.trim()  || undefined,
+          catalogId:     form.whatsapp.catalogId.trim()    || undefined,
           connected:     false,
         } : {},
       };
@@ -270,6 +279,14 @@ function CreateTenantModal({ onClose, onCreate }) {
           {/* [FIX-CREATE-4] Added webhookSecret field that was missing */}
           <Input label="Webhook Secret (optional)" value={form.whatsapp.webhookSecret}
             onChange={e => setWA('webhookSecret', e.target.value)} placeholder="Secret for webhook signature verification" />
+          {/* [FIX-CREATE-CATALOG] App Secret — used for per-tenant HMAC verification
+              of Meta payloads; stored AES-256-GCM encrypted on the Tenant model. */}
+          <Input label="App Secret (optional)" value={form.whatsapp.appSecret}
+            onChange={e => setWA('appSecret', e.target.value)} placeholder="From Meta App Dashboard → Settings → Basic" type="password" />
+          {/* [FIX-CREATE-CATALOG] Catalog ID — required for the WaCatalog auto-sync
+              scheduler to push menu/service updates to Meta's product catalog. */}
+          <Input label="Catalog ID (optional)" value={form.whatsapp.catalogId}
+            onChange={e => setWA('catalogId', e.target.value)} placeholder="From Meta Commerce Manager" />
           <Input label="WhatsApp Phone Number" value={form.whatsapp.phone}
             onChange={e => setWA('phone', e.target.value)} placeholder="+220 xxx xxxx" />
 
@@ -307,6 +324,9 @@ function CreateTenantModal({ onClose, onCreate }) {
           )}
           {created.tenant.whatsapp?.phone && (
             <CopyField label="WhatsApp Number" value={created.tenant.whatsapp.phone} />
+          )}
+          {created.tenant.whatsapp?.catalogId && (
+            <CopyField label="Catalog ID" value={created.tenant.whatsapp.catalogId} />
           )}
           <p style={{ fontSize: '0.77rem', color: 'var(--text-muted)', marginTop: 10, lineHeight: 1.5 }}>
             Status starts as <strong>PENDING</strong>. Open Edit → Status tab to activate this tenant.
@@ -416,6 +436,8 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
       accessToken:   '',  // never pre-fill — it's hashed on the server
       verifyToken:   initialTenant.whatsapp?.verifyToken   || '',
       webhookSecret: '',  // never pre-fill — hashed on server
+      appSecret:     '',  // never pre-fill — encrypted on server
+      catalogId:     initialTenant.whatsapp?.catalogId     || '',
       apiVersion:    initialTenant.whatsapp?.apiVersion    || 'v21.0',
     },
   });
@@ -507,9 +529,13 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
       // [FIX-EDIT-5] Don't send empty strings — they would overwrite existing stored values.
       // verifyToken is plaintext but still stored on the tenant; sending '' would break
       // Meta webhook verification for this tenant.
+      // [FIX-EDIT-CATALOG] Same guard applies to appSecret (would overwrite the encrypted
+      // value with nothing) and catalogId (would wipe an already-configured catalog link).
       if (!waPayload.accessToken)   delete waPayload.accessToken;
       if (!waPayload.webhookSecret) delete waPayload.webhookSecret;
       if (!waPayload.verifyToken)   delete waPayload.verifyToken;
+      if (!waPayload.appSecret)     delete waPayload.appSecret;
+      if (!waPayload.catalogId)     delete waPayload.catalogId;
 
       const r = await adminApi.updateTenant(tenant._id, { whatsapp: waPayload });
       const serverWA = r.data?.tenant?.whatsapp || {};
@@ -523,15 +549,18 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
           ...waPayload,
           // Override with whatever the server returned (may include connected status, etc.)
           ...serverWA,
-          // Never cache the plaintext tokens in state
+          // Never cache the plaintext tokens/secrets in state
           accessToken:   undefined,
           webhookSecret: undefined,
+          appSecret:     undefined,
         },
       }));
       toast.success('WhatsApp credentials saved');
-      // Clear token fields to prevent accidental re-submission
+      // Clear secret fields to prevent accidental re-submission — catalogId is not
+      // a secret and stays visible/editable, same as phoneNumberId.
       setWA('accessToken', '');
       setWA('webhookSecret', '');
+      setWA('appSecret', '');
 
       // Credentials are saved. Use the "Verify WhatsApp" button (POST /admin/tenants/:id/verify-whatsapp)
       // to call Meta's API and advance onboardingStep to 3 before activating the tenant.
@@ -761,6 +790,20 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
               value={form.whatsapp.webhookSecret}
               onChange={e => setWA('webhookSecret', e.target.value)}
               placeholder="Secret for webhook signature verification" />
+            {/* [FIX-WA-CATALOG] App Secret — per-tenant HMAC verification, encrypted
+                AES-256-GCM on the Tenant model. Was previously only settable via a
+                direct DB edit; now editable from the same panel as the other creds. */}
+            <Input
+              label={`App Secret${tenant.whatsapp?.phoneNumberId ? ' (leave blank to keep existing)' : ''}`}
+              value={form.whatsapp.appSecret}
+              onChange={e => setWA('appSecret', e.target.value)}
+              type="password" placeholder="From Meta App Dashboard → Settings → Basic" />
+            {/* [FIX-WA-CATALOG] Catalog ID — required for the WaCatalog auto-sync
+                scheduler (per-tenant debounced sync, delta hashing) to push menu/
+                service changes to Meta's product catalog. Without this, sync is
+                silently a no-op even though the scheduler fires normally. */}
+            <Input label="Catalog ID" value={form.whatsapp.catalogId}
+              onChange={e => setWA('catalogId', e.target.value)} placeholder="From Meta Commerce Manager" />
             <Select label="API Version" value={form.whatsapp.apiVersion}
               onChange={e => setWA('apiVersion', e.target.value)}>
               {['v21.0', 'v20.0', 'v19.0', 'v18.0'].map(v => (
