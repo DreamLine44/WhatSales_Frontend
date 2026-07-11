@@ -96,6 +96,20 @@ export const bizApi = {
   connectionRequestStatus: () => http.get('/api/whatsapp/request/status'),
 };
 
+// ── WhatsApp Commerce Catalog — /business/:tenantId/wacatalog/* ──────────────
+// GET  /wacatalog/health → { connected, status, products, lastSyncedAt, pendingSync,
+//                             lastSyncError, missingImages, outOfStock, mode }
+//      status ladder: not_connected | never_synced | sync_pending | sync_failed
+//                      | needs_sync | healthy
+// POST /wacatalog/sync   → { ok:true, synced, deleted } or 400/502 { ok:false, reason, status }
+// ⚠ Enabling the catalog (via bizApi.updateSettings) requires a catalogId AND a
+//   real (non-SIM_) connected WhatsApp number — the backend returns a clear
+//   400 message in either case, surface it directly to the tenant.
+export const catalogApi = {
+  health: () => http.get(`/business/${getTenantId()}/wacatalog/health`),
+  sync:   () => http.post(`/business/${getTenantId()}/wacatalog/sync`),
+};
+
 // ── Menu CRUD — /dashboard/:tenantId/menu ─────────────────────────────────────
 // GET    → { menuItems, count }
 // POST   → 201 { menuItems }
@@ -142,12 +156,45 @@ export const faqsApi = {
   remove: (faqId) => http.delete(`/dashboard/${getTenantId()}/faqs/${faqId}`),
 };
 
+// ── Promotions / Discount codes CRUD — /dashboard/:tenantId/promotions ───────
+// GET    → { promotions, count }
+// POST   → 201 { promotions }   body: { code, type: 'PERCENT'|'FIXED', value,
+//           active?, minOrderValue?, maxUses?, expiresAt?, description? }
+// PATCH  /:promoId → { promotions }   (code itself cannot be changed after creation)
+// DELETE /:promoId → { ok: true }
+// usedCount is read-only — incremented server-side automatically on redemption.
+export const promotionsApi = {
+  list:   () => http.get(`/dashboard/${getTenantId()}/promotions`),
+  add:    (body) => http.post(`/dashboard/${getTenantId()}/promotions`, body),
+  update: (promoId, body) => http.patch(`/dashboard/${getTenantId()}/promotions/${promoId}`, body),
+  remove: (promoId) => http.delete(`/dashboard/${getTenantId()}/promotions/${promoId}`),
+};
+
 // ── Order status — PATCH /admin/orders/:id/status ─────────────────────────────
 // ⚠ Uses TENANT API KEY via http (not adminHttp) — /admin routes accept tenant keys too
 // ⚠ status values: pending | payment_pending_verification | confirmed | completed | cancelled | payment_failed | rejected
 // ⚠ Auto-sends WhatsApp notification to customer on confirmed / completed / cancelled / rejected
+// ── Blob download helper — used for CSV exports (orders/bookings) ────────────
+export function downloadBlob(blob, filename) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 export const orderApi = {
   updateStatus: (orderId, body) => http.patch(`/admin/orders/${orderId}/status`, body),
+  // POST /dashboard/:tenantId/orders/:orderId/notify-ready — dedicated "Notify
+  // Customer — Ready" button, safe to click again to re-send. 400 if terminal.
+  notifyReady: (orderId) => http.post(`/dashboard/${getTenantId()}/orders/${orderId}/notify-ready`),
+  // GET /dashboard/:tenantId/orders/export — CSV download, capped at 5000 rows.
+  // Returns the raw axios response with responseType 'blob' so callers can
+  // trigger a browser download without trying to JSON-parse a CSV body.
+  exportCsv: (params = {}) => http.get(`/dashboard/${getTenantId()}/orders/export`, { params, responseType: 'blob' }),
 };
 
 // ── Booking status — PATCH /admin/bookings/:id/status ─────────────────────────
@@ -156,6 +203,8 @@ export const orderApi = {
 // ⚠ Field is adminNote (not notes) for booking updates
 export const bookingApi = {
   updateStatus: (bookingId, body) => http.patch(`/admin/bookings/${bookingId}/status`, body),
+  // GET /dashboard/:tenantId/bookings/export — CSV download.
+  exportCsv: (params = {}) => http.get(`/dashboard/${getTenantId()}/bookings/export`, { params, responseType: 'blob' }),
 };
 
 // ── Sessions — /admin/sessions/:tenantId ──────────────────────────────────────

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ShoppingCart, Calendar, UtensilsCrossed,
   Scissors, MessageSquare, BarChart3, Users, HelpCircle,
   Building2, Clock, Bot, Wifi, LogOut, ChevronRight,
-  Menu, X, Zap,
+  Menu, X, Zap, Tag, ShoppingBag,
 } from 'lucide-react';
 import { useAuth } from '../store/AuthContext.jsx';
 import { Logo } from './ui.jsx';
@@ -168,12 +168,14 @@ function SidebarContent({ user, modeConfig, hasBookings, hasMenu, hasServices, o
           <NavItem to="/analytics"   icon={BarChart3}      label="Analytics"     onClick={onClose} />
           <NavItem to="/customers"   icon={Users}          label="Customers"     onClick={onClose} />
           <NavItem to="/auto-replies" icon={HelpCircle}    label="Auto Replies"  onClick={onClose} />
+          <NavItem to="/promotions"  icon={Tag}            label="Promotions"    onClick={onClose} />
         </NavSection>
 
         <NavSection label="Setup">
           <NavItem to="/setup/business" icon={Building2}     label="Business Info"  onClick={onClose} />
           {hasMenu     && <NavItem to="/setup/menu"     icon={UtensilsCrossed} label="Menu / Products" onClick={onClose} />}
           {hasServices && <NavItem to="/setup/services" icon={Scissors}        label="Services"        onClick={onClose} />}
+          {hasMenu     && <NavItem to="/setup/catalog"  icon={ShoppingBag}     label="WhatsApp Catalog" onClick={onClose} />}
           <NavItem to="/setup/hours"    icon={Clock}    label="Opening Hours" onClick={onClose} />
           <NavItem to="/setup/bot"      icon={Bot}      label="Bot Messages"  onClick={onClose} />
           <NavItem to="/setup/whatsapp" icon={Wifi}     label="WhatsApp Status" onClick={onClose} />

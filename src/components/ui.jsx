@@ -470,7 +470,7 @@ export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend
       <div style={{ minWidth: 0, flex: 1 }}>
         {/* FIX: label bumped from 0.69rem → 0.73rem, contrast improved */}
         <div style={{ fontSize: '0.73rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>{label}</div>
-        <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', letterSpacing: '-0.04em', lineHeight: 1 }}>
+        <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', letterSpacing: '-0.01em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
           {(() => {
             if (typeof value !== 'string') return value ?? '—';
             // Support both regular space and narrow no-break space (\u202f)

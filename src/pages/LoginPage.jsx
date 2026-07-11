@@ -266,7 +266,7 @@ export default function LoginPage() {
                 flex: 1, padding: '14px 16px', textAlign: 'center',
                 borderRight: i < STATS.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none',
               }}>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', fontWeight: 800, color: i === 1 ? '#e0ac4f' : 'var(--green-300)', letterSpacing: '-0.03em' }}>{s.value}</div>
+                <div style={{ fontFamily: 'var(--font-body)', fontSize: '1.25rem', fontWeight: 800, color: i === 1 ? '#e0ac4f' : 'var(--green-300)', letterSpacing: 'normal', fontVariantNumeric: 'tabular-nums' }}>{s.value}</div>
                 <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.5)', marginTop: 2, lineHeight: 1.3 }}>{s.label}</div>
               </div>
             ))}

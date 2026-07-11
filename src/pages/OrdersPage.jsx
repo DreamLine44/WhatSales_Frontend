@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Clock, Package, DollarSign } from 'lucide-react';
-import { dashApi, orderApi } from '../api.js';
+import { ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Clock, Package, DollarSign, Bell, Download } from 'lucide-react';
+import { dashApi, orderApi, downloadBlob } from '../api.js';
 import { PageHeader, Card, StatusBadge, Btn, EmptyState, Spinner, Select, FilterBar, InlineSelect, Pagination } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 // [FIX-ORDERS-STATUS] Full 11-value Order.status enum from the backend model —
@@ -19,6 +19,7 @@ function OrderRow({ order, onUpdate }) {
   const [newStatus, setNewStatus] = useState(order.status);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [notifying, setNotifying] = useState(false);
 
   const handleUpdate = async () => {
     setSaving(true);
@@ -30,6 +31,21 @@ function OrderRow({ order, onUpdate }) {
       setExpanded(false);
     } catch (err) { toast.error(err.message || 'Failed to update order'); }
     finally { setSaving(false); }
+  };
+
+  // [FEATURE-NOTIFY-READY] Dedicated re-sendable WhatsApp notification, separate
+  // from the status dropdown — lets staff ping the customer again if they missed
+  // the first "your order is ready" message, without having to toggle status away
+  // and back (which would double-fire the status-change notification instead).
+  const TERMINAL_STATUSES = ['completed', 'cancelled', 'rejected', 'delivered', 'payment_failed'];
+  const canNotifyReady = !TERMINAL_STATUSES.includes(order.status);
+  const handleNotifyReady = async () => {
+    setNotifying(true);
+    try {
+      await orderApi.notifyReady(order._id);
+      toast.success('Customer notified');
+    } catch (err) { toast.error(err.message || 'Failed to notify customer'); }
+    finally { setNotifying(false); }
   };
 
   const isNew = order.status === 'pending';
@@ -69,7 +85,7 @@ function OrderRow({ order, onUpdate }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           {order.totalPrice != null && (
-            <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', letterSpacing: '-0.02em' }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', letterSpacing: 'normal', fontVariantNumeric: 'tabular-nums' }}>
               D {Number(order.totalPrice).toFixed(0)}
             </span>
           )}
@@ -111,7 +127,12 @@ function OrderRow({ order, onUpdate }) {
               <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Add a note..."
                 style={{ width: '100%', padding: '10px 12px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.875rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none' }} />
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {canNotifyReady && (
+                <Btn variant="soft" size="sm" onClick={handleNotifyReady} loading={notifying} title="Re-sendable — safe to click again if the customer missed it">
+                  <Bell size={13} /> Notify Customer — Ready
+                </Btn>
+              )}
               {(newStatus !== order.status || notes.trim()) && (
                 <Btn onClick={handleUpdate} loading={saving} size="sm">Save</Btn>
               )}
@@ -131,8 +152,21 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [exporting, setExporting] = useState(false);
   const requestIdRef = useRef(0);
   const LIMIT = 20;
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      // [FEATURE-EXPORT] GET /dashboard/:tenantId/orders/export — CSV, capped
+      // at 5000 rows. Honors the current status filter; a fresh export always
+      // reflects the on-screen filter, not "everything".
+      const r = await orderApi.exportCsv({ status: statusFilter || undefined });
+      downloadBlob(r.data, `orders-${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch (err) { toast.error(err.message || 'Export failed'); }
+    finally { setExporting(false); }
+  };
 
   const load = useCallback((p, sf) => {
     setLoading(true);
@@ -162,7 +196,12 @@ export default function OrdersPage() {
       <PageHeader
         icon={ShoppingCart} title="Orders"
         subtitle={`${total} total orders`}
-        actions={<Btn variant="ghost" size="sm" onClick={() => load(page, statusFilter)}><RefreshCw size={14} /> Refresh</Btn>}
+        actions={
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn variant="ghost" size="sm" onClick={handleExport} loading={exporting}><Download size={14} /> Export CSV</Btn>
+            <Btn variant="ghost" size="sm" onClick={() => load(page, statusFilter)}><RefreshCw size={14} /> Refresh</Btn>
+          </div>
+        }
       />
 
       {!loading && orders.length > 0 && (

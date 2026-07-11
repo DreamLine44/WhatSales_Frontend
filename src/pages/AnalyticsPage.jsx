@@ -12,7 +12,7 @@ function MetricBar({ label, value, displayValue, color, max, suffix = '' }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontSize: '0.845rem', color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</span>
-        <span style={{ fontSize: '0.975rem', fontWeight: 800, color, fontFamily: 'var(--font-display)', letterSpacing: '-0.02em' }}>
+        <span style={{ fontSize: '0.975rem', fontWeight: 800, color, fontFamily: 'var(--font-body)', letterSpacing: '-0.005em', fontVariantNumeric: 'tabular-nums' }}>
           {displayValue ?? value}{suffix}
         </span>
       </div>

@@ -24,7 +24,7 @@ function StatusBar({ label, count, total, color }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{
             fontSize: '0.92rem', fontWeight: 800, color: c,
-            fontFamily: 'var(--font-display)', letterSpacing: '-0.02em',
+            fontFamily: 'var(--font-body)', letterSpacing: 'normal', fontVariantNumeric: 'tabular-nums',
           }}>{count}</span>
           <span style={{ fontSize: '0.71rem', color: 'var(--text-ghost)', minWidth: 28, textAlign: 'right' }}>
             {total > 0 ? `${Math.round(pct)}%` : '—'}

@@ -19,6 +19,8 @@ import SessionsPage from './pages/SessionsPage.jsx';
 import AnalyticsPage from './pages/AnalyticsPage.jsx';
 import CustomersPage from './pages/CustomersPage.jsx';
 import AutoRepliesPage from './pages/AutoRepliesPage.jsx';
+import PromotionsPage from './pages/PromotionsPage.jsx';
+import CatalogPage from './pages/CatalogPage.jsx';
 import BusinessInfoPage from './pages/BusinessInfoPage.jsx';
 import MenuPage from './pages/MenuPage.jsx';
 import ServicesPage from './pages/ServicesPage.jsx';
@@ -93,9 +95,11 @@ export default function App() {
               <Route path="/analytics"      element={<AnalyticsPage />} />
               <Route path="/customers"      element={<CustomersPage />} />
               <Route path="/auto-replies"   element={<AutoRepliesPage />} />
+              <Route path="/promotions"     element={<PromotionsPage />} />
               <Route path="/setup/business" element={<BusinessInfoPage />} />
               <Route path="/setup/menu"     element={<MenuPage />} />
               <Route path="/setup/services" element={<ServicesPage />} />
+              <Route path="/setup/catalog"  element={<CatalogPage />} />
               <Route path="/setup/hours"    element={<OpeningHoursPage />} />
               <Route path="/setup/bot"      element={<BotMessagesPage />} />
               <Route path="/setup/whatsapp" element={<WhatsAppPage />} />
