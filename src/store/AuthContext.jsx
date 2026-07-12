@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { decodeSessionToken } from '../api.js';
 
 const AuthContext = createContext(null);
 
@@ -88,15 +89,20 @@ export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
+  // [FEATURE-STAFF-1] null = legacy shared tenant x-api-key (treated as
+  // OWNER-equivalent everywhere, matching the backend's own precedent —
+  // see requireRole()). Non-null = an individually-named AdminUser session,
+  // carrying the real role (OWNER/MANAGER/STAFF) for UI-level gating.
+  const [adminSession, setAdminSession] = useState(null);
 
-  // Fetch business config with the stored (or supplied) credentials
+  // Fetch business config with either a tenant x-api-key or a staff Bearer token.
   // [AUDIT-FIX-17] Backend now also returns `tenantStatus` — return both instead
   // of discarding everything except `business`.
-  const fetchBusiness = useCallback(async (tenantId, apiKey) => {
-    const res = await axios.get(`${BASE_URL}/business/${tenantId}`, {
-      headers: { 'x-api-key': apiKey },
-      timeout: 12000,
-    });
+  const fetchBusiness = useCallback(async (tenantId, auth) => {
+    const headers = auth.staffToken
+      ? { Authorization: `Bearer ${auth.staffToken}` }
+      : { 'x-api-key': auth.apiKey };
+    const res = await axios.get(`${BASE_URL}/business/${tenantId}`, { headers, timeout: 12000 });
     return {
       biz:           res.data?.business || {},
       tenantStatus:  res.data?.tenantStatus || null,
@@ -107,53 +113,125 @@ export function AuthProvider({ children }) {
   // [FIX-7] Pass the current user snapshot as prevUser so buildUserFromResponse
   // can carry forward onboardingStep and connected without regressing them
   // (only relevant on the legacy-fallback path — see buildUserFromResponse).
-  const restore = useCallback(async (tenantId, apiKey) => {
+  const restore = useCallback(async (tenantId, auth) => {
     try {
-      const { biz, tenantStatus } = await fetchBusiness(tenantId, apiKey);
+      const { biz, tenantStatus } = await fetchBusiness(tenantId, auth);
       setUser(prev => buildUserFromResponse(tenantId, biz, tenantStatus, prev));
     } catch {
       // Session expired or invalid — clear and force re-login
       localStorage.removeItem('ws_tenant_id');
       localStorage.removeItem('ws_api_key');
+      localStorage.removeItem('ws_staff_token');
+      localStorage.removeItem('ws_staff_admin');
+      setAdminSession(null);
     } finally {
       setLoading(false);
     }
   }, [fetchBusiness]);
 
-  // On mount, try to restore session from localStorage
+  // On mount, try to restore session from localStorage. A staff Bearer token
+  // takes precedence if present — the two credentials are kept mutually
+  // exclusive (see staffLogin/login/logout below), so at most one should exist.
   useEffect(() => {
-    const tenantId = localStorage.getItem('ws_tenant_id');
-    const apiKey   = localStorage.getItem('ws_api_key');
-    if (tenantId && apiKey) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      restore(tenantId, apiKey);
+    const tenantId   = localStorage.getItem('ws_tenant_id');
+    const staffToken = localStorage.getItem('ws_staff_token');
+    const apiKey     = localStorage.getItem('ws_api_key');
+
+    if (tenantId && staffToken) {
+      try {
+        const cached = JSON.parse(localStorage.getItem('ws_staff_admin') || 'null');
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        if (cached) setAdminSession(cached);
+      } catch { /* corrupt cache — restore() below will still work from the token itself */ }
+      restore(tenantId, { staffToken });
+    } else if (tenantId && apiKey) {
+      restore(tenantId, { apiKey });
     } else {
       setLoading(false);
     }
   }, [restore]);
 
+  // Clears whichever credential is currently stored, so switching auth modes
+  // (legacy key ↔ staff session) never leaves a stale one behind for the
+  // interceptor in api.js to pick up by accident.
+  const clearStoredCreds = () => {
+    localStorage.removeItem('ws_tenant_id');
+    localStorage.removeItem('ws_api_key');
+    localStorage.removeItem('ws_staff_token');
+    localStorage.removeItem('ws_staff_admin');
+  };
+
   const login = useCallback(async (tenantId, apiKey) => {
     setError(null);
-    const { biz, tenantStatus } = await fetchBusiness(tenantId.trim(), apiKey.trim());
+    const { biz, tenantStatus } = await fetchBusiness(tenantId.trim(), { apiKey: apiKey.trim() });
+    clearStoredCreds();
     localStorage.setItem('ws_tenant_id', tenantId.trim());
     localStorage.setItem('ws_api_key', apiKey.trim());
+    setAdminSession(null);
     setUser(buildUserFromResponse(tenantId.trim(), biz, tenantStatus));
   }, [fetchBusiness]);
 
+  // [FEATURE-STAFF-1] POST /dashboard/auth/login → { token, admin, tenant }.
+  // Response includes tenant directly, so no extra round trip is needed here.
+  const staffLogin = useCallback(async (email, password) => {
+    setError(null);
+    const res = await axios.post(`${BASE_URL}/dashboard/auth/login`, { email, password }, { timeout: 12000 })
+      .catch(err => { throw new Error(err.response?.data?.error || err.message); });
+    const { token, admin, tenant } = res.data;
+    const { biz, tenantStatus } = await fetchBusiness(tenant.id, { staffToken: token });
+    clearStoredCreds();
+    localStorage.setItem('ws_tenant_id', tenant.id);
+    localStorage.setItem('ws_staff_token', token);
+    localStorage.setItem('ws_staff_admin', JSON.stringify(admin));
+    setAdminSession(admin);
+    setUser(buildUserFromResponse(tenant.id, biz, tenantStatus));
+  }, [fetchBusiness]);
+
+  // [FEATURE-STAFF-1] POST /dashboard/auth/accept-invite → { token, admin } —
+  // no tenant block in this response, so tenantId is read out of the token
+  // payload itself (decodeSessionToken — see api.js for why this is safe).
+  const completeInvite = useCallback(async (inviteToken, password) => {
+    setError(null);
+    const res = await axios.post(`${BASE_URL}/dashboard/auth/accept-invite`, { inviteToken, password }, { timeout: 12000 })
+      .catch(err => { throw new Error(err.response?.data?.error || err.message); });
+    const { token, admin } = res.data;
+    const payload = decodeSessionToken(token);
+    if (!payload?.tenantId) throw new Error('Could not determine account — please try logging in instead.');
+    const { biz, tenantStatus } = await fetchBusiness(payload.tenantId, { staffToken: token });
+    clearStoredCreds();
+    localStorage.setItem('ws_tenant_id', payload.tenantId);
+    localStorage.setItem('ws_staff_token', token);
+    localStorage.setItem('ws_staff_admin', JSON.stringify(admin));
+    setAdminSession(admin);
+    setUser(buildUserFromResponse(payload.tenantId, biz, tenantStatus));
+  }, [fetchBusiness]);
+
   const logout = useCallback(() => {
-    localStorage.removeItem('ws_tenant_id');
-    localStorage.removeItem('ws_api_key');
+    clearStoredCreds();
+    setAdminSession(null);
     setUser(null);
   }, []);
 
   const refreshUser = useCallback(async () => {
-    const tenantId = localStorage.getItem('ws_tenant_id');
-    const apiKey   = localStorage.getItem('ws_api_key');
-    if (tenantId && apiKey) await restore(tenantId, apiKey);
+    const tenantId   = localStorage.getItem('ws_tenant_id');
+    const staffToken = localStorage.getItem('ws_staff_token');
+    const apiKey     = localStorage.getItem('ws_api_key');
+    if (tenantId && staffToken) await restore(tenantId, { staffToken });
+    else if (tenantId && apiKey) await restore(tenantId, { apiKey });
   }, [restore]);
 
+  // [FEATURE-STAFF-1] true for a legacy shared key (implicitly full-access,
+  // matching the backend's own treatment) or a named OWNER session; false for
+  // MANAGER/STAFF — pages use this to gate owner-only actions (staff management,
+  // WhatsApp credential changes, tenant-level settings some businesses may want
+  // to restrict).
+  const isOwner = adminSession === null || adminSession?.role === 'OWNER';
+
   return (
-    <AuthContext.Provider value={{ user, loading, error, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{
+      user, loading, error, login, logout, refreshUser,
+      adminSession, isOwner, staffLogin, completeInvite,
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -4,11 +4,11 @@ import {
   LayoutDashboard, ShoppingCart, Calendar, UtensilsCrossed,
   Scissors, MessageSquare, BarChart3, Users, HelpCircle,
   Building2, Clock, Bot, Wifi, LogOut, ChevronRight,
-  Menu, X, Zap, Tag, ShoppingBag,
+  Menu, X, Zap, Tag, UserCog, Bell, Settings2, ShoppingBag,
 } from 'lucide-react';
 import { useAuth } from '../store/AuthContext.jsx';
 import { Logo } from './ui.jsx';
-import { getModeConfig, needsBookings, needsMenu, needsServices, sessionsApi } from '../api.js';
+import { getModeConfig, needsBookings, needsMenu, needsServices, sessionsApi, notificationsApi } from '../api.js';
 import toast from 'react-hot-toast';
 
 function NavItem({ to, icon: Icon, label, end = false, badge, onClick }) {
@@ -113,7 +113,12 @@ function PlanBadge({ plan }) {
   );
 }
 
-function SidebarContent({ user, modeConfig, hasBookings, hasMenu, hasServices, onClose, onLogout, humanSessionCount }) {
+function SidebarContent({ user, modeConfig, hasBookings, hasMenu, hasServices, onClose, onLogout, humanSessionCount, unreadMsgCount }) {
+  // [FEATURE-STAFF-1] STAFF-role sessions shouldn't see who else has tenant
+  // access — hide the Team nav item for them. null (legacy shared key) and
+  // OWNER/MANAGER all see it.
+  const { adminSession } = useAuth();
+  const canSeeTeam = adminSession === null || adminSession?.role !== 'STAFF';
   return (
     <div style={{
       width: 'var(--sidebar-w)', flexShrink: 0,
@@ -168,16 +173,20 @@ function SidebarContent({ user, modeConfig, hasBookings, hasMenu, hasServices, o
           <NavItem to="/analytics"   icon={BarChart3}      label="Analytics"     onClick={onClose} />
           <NavItem to="/customers"   icon={Users}          label="Customers"     onClick={onClose} />
           <NavItem to="/auto-replies" icon={HelpCircle}    label="Auto Replies"  onClick={onClose} />
-          <NavItem to="/promotions"  icon={Tag}            label="Promotions"    onClick={onClose} />
+          {/* Promotions only apply to orders (orderService.saveOrder), not bookings — see promoService.js */}
+          {!hasBookings && <NavItem to="/promotions"  icon={Tag}           label="Promotions"    onClick={onClose} />}
+          <NavItem to="/messages"    icon={Bell}           label="Messages"      badge={unreadMsgCount || undefined} onClick={onClose} />
+          {canSeeTeam && <NavItem to="/team" icon={UserCog} label="Team" onClick={onClose} />}
         </NavSection>
 
         <NavSection label="Setup">
           <NavItem to="/setup/business" icon={Building2}     label="Business Info"  onClick={onClose} />
           {hasMenu     && <NavItem to="/setup/menu"     icon={UtensilsCrossed} label="Menu / Products" onClick={onClose} />}
           {hasServices && <NavItem to="/setup/services" icon={Scissors}        label="Services"        onClick={onClose} />}
-          {hasMenu     && <NavItem to="/setup/catalog"  icon={ShoppingBag}     label="WhatsApp Catalog" onClick={onClose} />}
           <NavItem to="/setup/hours"    icon={Clock}    label="Opening Hours" onClick={onClose} />
           <NavItem to="/setup/bot"      icon={Bot}      label="Bot Messages"  onClick={onClose} />
+          {hasMenu     && <NavItem to="/setup/catalog"  icon={ShoppingBag}     label="WhatsApp Catalog" onClick={onClose} />}
+          <NavItem to="/setup/preferences" icon={Settings2} label="Preferences" onClick={onClose} />
           <NavItem to="/setup/whatsapp" icon={Wifi}     label="WhatsApp Status" onClick={onClose} />
         </NavSection>
       </nav>
@@ -294,6 +303,7 @@ export default function DashboardLayout() {
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [humanSessionCount, setHumanSessionCount] = useState(0);
+  const [unreadMsgCount, setUnreadMsgCount] = useState(0);
   const mode = user?.businessMode || 'RESTAURANT';
   const modeConfig = getModeConfig(mode);
   const hasBookings = needsBookings(mode);
@@ -333,8 +343,19 @@ export default function DashboardLayout() {
     return () => clearInterval(t);
   }, []);
 
+  useEffect(() => {
+    const poll = () => {
+      notificationsApi.list({ limit: 1, direction: 'TO_TENANT' })
+        .then(r => setUnreadMsgCount(r.data?.unreadCount || 0))
+        .catch(() => {});
+    };
+    poll();
+    const t = setInterval(poll, 90000);
+    return () => clearInterval(t);
+  }, []);
+
   const handleLogout = () => { logout(); navigate('/login'); toast.success('Signed out'); };
-  const sidebarProps = { user, modeConfig, hasBookings, hasMenu, hasServices, onLogout: handleLogout, humanSessionCount };
+  const sidebarProps = { user, modeConfig, hasBookings, hasMenu, hasServices, onLogout: handleLogout, humanSessionCount, unreadMsgCount };
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-page)' }}>

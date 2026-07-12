@@ -10,6 +10,7 @@ import AdminLayout from './components/AdminLayout.jsx';
 
 // Public
 import LoginPage from './pages/LoginPage.jsx';
+import AcceptInvitePage from './pages/AcceptInvitePage.jsx';
 
 // Tenant pages
 import DashboardPage from './pages/DashboardPage.jsx';
@@ -20,17 +21,21 @@ import AnalyticsPage from './pages/AnalyticsPage.jsx';
 import CustomersPage from './pages/CustomersPage.jsx';
 import AutoRepliesPage from './pages/AutoRepliesPage.jsx';
 import PromotionsPage from './pages/PromotionsPage.jsx';
-import CatalogPage from './pages/CatalogPage.jsx';
+import StaffPage from './pages/StaffPage.jsx';
+import NotificationsPage from './pages/NotificationsPage.jsx';
 import BusinessInfoPage from './pages/BusinessInfoPage.jsx';
 import MenuPage from './pages/MenuPage.jsx';
 import ServicesPage from './pages/ServicesPage.jsx';
 import OpeningHoursPage from './pages/OpeningHoursPage.jsx';
 import BotMessagesPage from './pages/BotMessagesPage.jsx';
+import CatalogPage from './pages/CatalogPage.jsx';
+import PreferencesPage from './pages/PreferencesPage.jsx';
 import WhatsAppPage from './pages/WhatsAppPage.jsx';
 
 // Admin pages
 import AdminDashboardPage from './pages/admin/AdminDashboardPage.jsx';
 import AdminTenantsPage from './pages/admin/AdminTenantsPage.jsx';
+import AdminMessagesPage from './pages/admin/AdminMessagesPage.jsx';
 
 // ── Route guards ──────────────────────────────────────────────────────────────
 function RequireAuth({ children }) {
@@ -84,6 +89,7 @@ export default function App() {
           <Routes>
             {/* Public */}
             <Route path="/login" element={<RedirectIfLoggedIn><LoginPage /></RedirectIfLoggedIn>} />
+            <Route path="/accept-invite" element={<AcceptInvitePage />} />
             <Route path="/" element={<Navigate to="/login" replace />} />
 
             {/* Tenant dashboard */}
@@ -96,19 +102,23 @@ export default function App() {
               <Route path="/customers"      element={<CustomersPage />} />
               <Route path="/auto-replies"   element={<AutoRepliesPage />} />
               <Route path="/promotions"     element={<PromotionsPage />} />
+              <Route path="/messages"       element={<NotificationsPage />} />
               <Route path="/setup/business" element={<BusinessInfoPage />} />
               <Route path="/setup/menu"     element={<MenuPage />} />
               <Route path="/setup/services" element={<ServicesPage />} />
-              <Route path="/setup/catalog"  element={<CatalogPage />} />
               <Route path="/setup/hours"    element={<OpeningHoursPage />} />
               <Route path="/setup/bot"      element={<BotMessagesPage />} />
+              <Route path="/setup/catalog"  element={<CatalogPage />} />
+              <Route path="/setup/preferences" element={<PreferencesPage />} />
               <Route path="/setup/whatsapp" element={<WhatsAppPage />} />
+              <Route path="/team"           element={<StaffPage />} />
             </Route>
 
             {/* Super admin */}
             <Route element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
-              <Route path="/admin"         element={<AdminDashboardPage />} />
-              <Route path="/admin/tenants" element={<AdminTenantsPage />} />
+              <Route path="/admin"          element={<AdminDashboardPage />} />
+              <Route path="/admin/tenants"  element={<AdminTenantsPage />} />
+              <Route path="/admin/messages" element={<AdminMessagesPage />} />
             </Route>
 
             {/* Catch-all */}

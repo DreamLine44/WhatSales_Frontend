@@ -5,7 +5,31 @@ const BASE_URL = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up
 
 // ── Credential helpers ────────────────────────────────────────────────────────
 function getApiKey()   { return localStorage.getItem('ws_api_key') || ''; }
-function getTenantId() { return localStorage.getItem('ws_tenant_id') || ''; }
+export function getTenantId() { return localStorage.getItem('ws_tenant_id') || ''; }
+
+// [FEATURE-STAFF-1] AdminUser Bearer session token — kept mutually exclusive
+// with ws_api_key (see AuthContext: logging in one way clears the other).
+// A stored staff token always wins over a stored api key in the interceptor
+// below, matching the backend's own precedence in requireApiKey().
+function getStaffToken() { return localStorage.getItem('ws_staff_token') || ''; }
+
+// The session token is `<base64url payload>.<hmac sig>` (see
+// services/adminAuthService.js createSessionToken) — the payload half is
+// plain JSON, decodable client-side without the HMAC secret. This lets the
+// frontend read { sub, tenantId, role, exp } locally (e.g. right after
+// accept-invite, whose response doesn't include a tenant block) without an
+// extra round trip to /dashboard/auth/me. The backend re-verifies the
+// signature on every request regardless — this decode is display/routing
+// convenience only, never a trust boundary.
+export function decodeSessionToken(token) {
+  try {
+    const [payloadB64] = String(token).split('.');
+    const json = atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/'));
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
 
 function getAdminApiKey() {
   try {
@@ -19,8 +43,18 @@ function getAdminApiKey() {
 // Tenant API key — used for /business, /dashboard, /admin (non-superadmin) routes
 const http = axios.create({ baseURL: BASE_URL, timeout: 15000 });
 http.interceptors.request.use(cfg => {
-  const key = getApiKey();
-  if (key) cfg.headers['x-api-key'] = key;
+  // [FEATURE-STAFF-1] Bearer wins if a staff session exists — mirrors the
+  // backend's own precedence (requireApiKey tries Bearer first). The two
+  // credentials are kept mutually exclusive by AuthContext, but if both were
+  // ever present for some reason, sending only one avoids the backend's
+  // "should never carry both" ambiguity entirely.
+  const staffToken = getStaffToken();
+  if (staffToken) {
+    cfg.headers['Authorization'] = `Bearer ${staffToken}`;
+  } else {
+    const key = getApiKey();
+    if (key) cfg.headers['x-api-key'] = key;
+  }
   return cfg;
 });
 
@@ -54,6 +88,41 @@ export const authApi = {
     });
     return res.data;
   },
+};
+
+// ── Staff / multi-admin auth [FEATURE-STAFF-1] ────────────────────────────────
+// POST /dashboard/auth/login          — unauthenticated, email+password → session
+// POST /dashboard/auth/accept-invite  — unauthenticated, inviteToken+password → session
+// GET  /dashboard/auth/me             — whoami for whichever credential is active
+// POST /dashboard/:tenantId/admins/claim-owner — bootstrap first OWNER for a tenant
+//      created before this feature shipped; authenticated with the EXISTING
+//      tenant x-api-key (not a session token — there isn't one yet).
+// Login/accept-invite are plain axios calls (no tenant context exists yet, so
+// the `http` instance's interceptor — which needs getTenantId() — doesn't apply).
+export const staffAuthApi = {
+  login: (email, password) => axios.post(`${BASE_URL}/dashboard/auth/login`, { email, password }, { timeout: 12000 })
+    .catch(err => { throw new Error(err.response?.data?.error || err.message); }),
+  acceptInvite: (inviteToken, password) => axios.post(`${BASE_URL}/dashboard/auth/accept-invite`, { inviteToken, password }, { timeout: 12000 })
+    .catch(err => { throw new Error(err.response?.data?.error || err.message); }),
+  me: () => http.get('/dashboard/auth/me'),
+  // Must be called while the legacy tenant x-api-key is the active credential
+  // (not a staff Bearer token) — possession of that key is the proof of
+  // ownership this one-time bootstrap relies on.
+  claimOwner: (tenantId, body) => http.post(`/dashboard/${tenantId}/admins/claim-owner`, body),
+};
+
+// ── Staff management — /dashboard/:tenantId/admins ────────────────────────────
+// GET    → { admins }  (no role gate at the route level, but intended for OWNER/MANAGER)
+// POST   /invite → 201 { admin, inviteToken, inviteExpiresAt }  — OWNER only.
+//        inviteToken is returned ONCE and never stored — this frontend is
+//        responsible for handing it to the invitee (there's no email integration).
+// PATCH  /:id → { admin }  body: { role?, status? }  — OWNER only
+// DELETE /:id → { ok: true }  — OWNER only
+export const staffApi = {
+  list:   (tenantId) => http.get(`/dashboard/${tenantId}/admins`),
+  invite: (tenantId, body) => http.post(`/dashboard/${tenantId}/admins/invite`, body),
+  update: (tenantId, id, body) => http.patch(`/dashboard/${tenantId}/admins/${id}`, body),
+  remove: (tenantId, id) => http.delete(`/dashboard/${tenantId}/admins/${id}`),
 };
 
 // ── Dashboard overview & lists ────────────────────────────────────────────────
@@ -97,17 +166,44 @@ export const bizApi = {
 };
 
 // ── WhatsApp Commerce Catalog — /business/:tenantId/wacatalog/* ──────────────
-// GET  /wacatalog/health → { connected, status, products, lastSyncedAt, pendingSync,
-//                             lastSyncError, missingImages, outOfStock, mode }
-//      status ladder: not_connected | never_synced | sync_pending | sync_failed
-//                      | needs_sync | healthy
-// POST /wacatalog/sync   → { ok:true, synced, deleted } or 400/502 { ok:false, reason, status }
+// GET  health → { connected, status, products, lastSyncedAt, pendingSync,
+//                  lastSyncError, missingImages, outOfStock, mode }
+// status: not_connected | sync_pending | sync_failed | never_synced | needs_sync | healthy
+// POST sync (rate-limited 5/min) → { ok, synced, deleted } or 400 (NO_TOKEN/NO_CATALOG_ID) or 502 (Meta failure)
 // ⚠ Enabling the catalog (via bizApi.updateSettings) requires a catalogId AND a
 //   real (non-SIM_) connected WhatsApp number — the backend returns a clear
 //   400 message in either case, surface it directly to the tenant.
+// ⚠ catalogId itself lives on BusinessConfig.waCatalog (tenant-facing, set from
+//   this page), NOT on the Tenant model — the admin panel doesn't manage it.
 export const catalogApi = {
   health: () => http.get(`/business/${getTenantId()}/wacatalog/health`),
   sync:   () => http.post(`/business/${getTenantId()}/wacatalog/sync`),
+};
+
+// ── Admin ↔ Tenant messaging — /admin/notifications ───────────────────────────
+// Two-way inbox between a tenant's admin and the platform super admin.
+// direction: TO_TENANT (platform → tenant) | TO_ADMIN (tenant → platform)
+// severity: info | warning | urgent
+// ⚠ Uses TENANT API KEY via http — /admin/notifications accepts tenant keys
+//   too (requireApiKey, not requireSuperAdminKey). Tenant calls are ALWAYS
+//   auto-scoped server-side to their own tenantId regardless of query params.
+export const notificationsApi = {
+  // No ?direction filter → returns BOTH directions for this tenant (received
+  // from the platform AND their own sent messages) so a single call can drive
+  // an Inbox/Sent tab split client-side.
+  list:     (p = {}) => http.get('/admin/notifications', { params: p }),
+  // Tenant → super admin. Always addressed to the platform; body: { subject, body, severity? }
+  send:     (body) => http.post('/admin/notifications', body),
+  markRead: (id) => http.patch(`/admin/notifications/${id}/read`),
+};
+
+// Super admin side — uses adminHttp (SUPER_ADMIN_API_KEY)
+export const adminNotificationsApi = {
+  // ?tenantId, ?direction, ?unreadOnly=true, ?broadcastId all supported
+  list: (p = {}) => adminHttp.get('/admin/notifications', { params: p }),
+  // Direct: { subject, body, severity?, tenantId }.  Broadcast: { subject, body, severity?, broadcast: true }
+  send: (body) => adminHttp.post('/admin/notifications', body),
+  markRead: (id) => adminHttp.patch(`/admin/notifications/${id}/read`),
 };
 
 // ── Menu CRUD — /dashboard/:tenantId/menu ─────────────────────────────────────

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Eye, EyeOff, Hash, KeyRound, Shield, Zap,
-  MessageSquare, BarChart3, ArrowRight, CheckCircle, ShoppingCart,
+  MessageSquare, BarChart3, ArrowRight, CheckCircle, ShoppingCart, Mail, Users,
 } from 'lucide-react';
 import { useAuth } from '../store/AuthContext.jsx';
 import { useAdmin } from '../store/AdminContext.jsx';
@@ -161,7 +161,7 @@ function FormInput({ label, icon: Icon, type = 'text', value, onChange, placehol
 
 export default function LoginPage() {
   const navigate    = useNavigate();
-  const { login }   = useAuth();
+  const { login, staffLogin } = useAuth();
   const { adminLogin } = useAdmin();
   const [tenantId, setTenantId] = useState('');
   const [apiKey,   setApiKey]   = useState('');
@@ -170,8 +170,38 @@ export default function LoginPage() {
   const [focusId,  setFocusId]  = useState(false);
   const [focusKey, setFocusKey] = useState(false);
 
+  // [FEATURE-STAFF-1] Two sign-in modes sharing one form: the original shared
+  // Tenant ID + API key, and a named team-member email + password login
+  // (POST /dashboard/auth/login). Kept as tabs on the same screen rather than
+  // a separate route so switching between them doesn't lose the visual
+  // context of "this is the WhatSales sign-in page."
+  const [mode,      setMode]      = useState('key'); // 'key' | 'team'
+  const [email,     setEmail]     = useState('');
+  const [password,  setPassword]  = useState('');
+  const [showPass,  setShowPass]  = useState(false);
+  const [focusEmail, setFocusEmail] = useState(false);
+  const [focusPass,  setFocusPass]  = useState(false);
+
   const handleSubmit = async (e) => {
     e?.preventDefault();
+
+    if (mode === 'team') {
+      if (!email.trim() || !password) {
+        toast.error('Please enter both email and password');
+        return;
+      }
+      setLoading(true);
+      try {
+        await staffLogin(email.trim(), password);
+        navigate('/dashboard');
+      } catch (err) {
+        toast.error(err.message || 'Invalid email or password');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (!tenantId.trim() || !apiKey.trim()) {
       toast.error('Please enter both Tenant ID and API Key');
       return;
@@ -331,7 +361,7 @@ export default function LoginPage() {
             </div>
 
             {/* Form heading */}
-            <div style={{ marginBottom: 28 }} className="ws-fade-up">
+            <div style={{ marginBottom: 20 }} className="ws-fade-up">
               <h2 style={{
                 fontFamily: 'var(--font-display)', fontSize: 'clamp(1.5rem, 4vw, 1.9rem)',
                 fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.04em', marginBottom: 6,
@@ -339,63 +369,134 @@ export default function LoginPage() {
                 Sign in
               </h2>
               <p style={{ fontSize: '0.855rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                Enter your credentials to access your dashboard
+                {mode === 'team' ? 'Sign in with your team member email and password' : 'Enter your credentials to access your dashboard'}
               </p>
+            </div>
+
+            {/* [FEATURE-STAFF-1] Mode tabs */}
+            <div className="ws-fade-up" style={{
+              display: 'flex', gap: 4, padding: 4, marginBottom: 22,
+              background: 'var(--bg-overlay)', borderRadius: 'var(--r-md)', border: '1.5px solid var(--border)',
+            }}>
+              {[
+                { key: 'key',  label: 'API Key',    icon: KeyRound },
+                { key: 'team', label: 'Team Login', icon: Users },
+              ].map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setMode(key)}
+                  style={{
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    padding: '8px 10px', borderRadius: 'var(--r-sm)', border: 'none', cursor: 'pointer',
+                    background: mode === key ? 'var(--bg-surface)' : 'transparent',
+                    boxShadow: mode === key ? 'var(--sh-sm)' : 'none',
+                    color: mode === key ? 'var(--text-primary)' : 'var(--text-muted)',
+                    fontWeight: 700, fontSize: '0.82rem', transition: 'background 0.15s, box-shadow 0.15s',
+                  }}
+                >
+                  <Icon size={14} /> {label}
+                </button>
+              ))}
             </div>
 
             {/* The form */}
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-              <div className="ws-fade-up">
-                <FormInput
-                  label="Tenant ID"
-                  icon={Hash}
-                  value={tenantId}
-                  onChange={e => setTenantId(e.target.value)}
-                  placeholder="your-business-id"
-                  autoComplete="username"
-                  focused={focusId}
-                  onFocus={() => setFocusId(true)}
-                  onBlur={() => setFocusId(false)}
-                />
-              </div>
+              {mode === 'team' ? (
+                <>
+                  <div className="ws-fade-up">
+                    <FormInput
+                      label="Email"
+                      icon={Mail}
+                      type="email"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="you@business.com"
+                      autoComplete="username"
+                      focused={focusEmail}
+                      onFocus={() => setFocusEmail(true)}
+                      onBlur={() => setFocusEmail(false)}
+                    />
+                  </div>
+                  <div className="ws-fade-up">
+                    <FormInput
+                      label="Password"
+                      icon={KeyRound}
+                      type={showPass ? 'text' : 'password'}
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="••••••••••••"
+                      autoComplete="current-password"
+                      focused={focusPass}
+                      onFocus={() => setFocusPass(true)}
+                      onBlur={() => setFocusPass(false)}
+                      rightSlot={
+                        <button type="button" onClick={() => setShowPass(v => !v)} style={{
+                          color: 'var(--text-muted)', background: 'none', border: 'none',
+                          cursor: 'pointer', display: 'flex', padding: 2,
+                        }}>
+                          {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                        </button>
+                      }
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="ws-fade-up">
+                    <FormInput
+                      label="Tenant ID"
+                      icon={Hash}
+                      value={tenantId}
+                      onChange={e => setTenantId(e.target.value)}
+                      placeholder="your-business-id"
+                      autoComplete="username"
+                      focused={focusId}
+                      onFocus={() => setFocusId(true)}
+                      onBlur={() => setFocusId(false)}
+                    />
+                  </div>
 
-              <div className="ws-fade-up">
-                <FormInput
-                  label="API Key"
-                  icon={KeyRound}
-                  type={showKey ? 'text' : 'password'}
-                  value={apiKey}
-                  onChange={e => setApiKey(e.target.value)}
-                  placeholder="••••••••••••••••••"
-                  autoComplete="current-password"
-                  focused={focusKey}
-                  onFocus={() => setFocusKey(true)}
-                  onBlur={() => setFocusKey(false)}
-                  rightSlot={
-                    <button type="button" onClick={() => setShowKey(v => !v)} style={{
-                      color: 'var(--text-muted)', background: 'none', border: 'none',
-                      cursor: 'pointer', display: 'flex', padding: 2,
-                    }}>
-                      {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
-                    </button>
-                  }
-                />
-              </div>
+                  <div className="ws-fade-up">
+                    <FormInput
+                      label="API Key"
+                      icon={KeyRound}
+                      type={showKey ? 'text' : 'password'}
+                      value={apiKey}
+                      onChange={e => setApiKey(e.target.value)}
+                      placeholder="••••••••••••••••••"
+                      autoComplete="current-password"
+                      focused={focusKey}
+                      onFocus={() => setFocusKey(true)}
+                      onBlur={() => setFocusKey(false)}
+                      rightSlot={
+                        <button type="button" onClick={() => setShowKey(v => !v)} style={{
+                          color: 'var(--text-muted)', background: 'none', border: 'none',
+                          cursor: 'pointer', display: 'flex', padding: 2,
+                        }}>
+                          {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                        </button>
+                      }
+                    />
+                  </div>
 
-              {/* Admin hint */}
-              <div className="ws-fade-up" style={{
-                display: 'flex', alignItems: 'flex-start', gap: 9,
-                padding: '10px 13px',
-                background: 'var(--purple-dim)',
-                border: '1.5px solid rgba(124,58,237,0.15)',
-                borderRadius: 'var(--r-md)',
-              }}>
-                <Shield size={13} color="var(--purple)" style={{ flexShrink: 0, marginTop: 2 }} />
-                <p style={{ fontSize: '0.78rem', color: 'var(--purple)', lineHeight: 1.5 }}>
-                  Use your Super Admin credentials to access the admin panel.
-                </p>
-              </div>
+                  {/* Admin hint — only relevant to the API key flow, since the super
+                      admin console has no concept of a named team-member login */}
+                  <div className="ws-fade-up" style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 9,
+                    padding: '10px 13px',
+                    background: 'var(--purple-dim)',
+                    border: '1.5px solid rgba(124,58,237,0.15)',
+                    borderRadius: 'var(--r-md)',
+                  }}>
+                    <Shield size={13} color="var(--purple)" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <p style={{ fontSize: '0.78rem', color: 'var(--purple)', lineHeight: 1.5 }}>
+                      Use your Super Admin credentials to access the admin panel.
+                    </p>
+                  </div>
+                </>
+              )}
 
               {/* Submit */}
               <div className="ws-fade-up">
@@ -427,7 +528,7 @@ export default function LoginPage() {
             {/* Footer links */}
             <div className="ws-fade-up">
               <p style={{ textAlign: 'center', marginTop: 20, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                Don't have credentials?{' '}
+                {mode === 'team' ? "Don't have an account?" : "Don't have credentials?"}{' '}
                 <a href="mailto:alhassantrawally1@gmail.com" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'none' }}>
                   Contact your administrator
                 </a>
@@ -439,9 +540,19 @@ export default function LoginPage() {
                 border: '1.5px solid var(--border)',
               }}>
                 <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.65, margin: 0 }}>
-                  <strong style={{ color: 'var(--text-secondary)' }}>How to sign in:</strong>{' '}
-                  Your Tenant ID and API key are provided when your account is created. The API key is shown{' '}
-                  <strong style={{ color: 'var(--text-secondary)' }}>once only</strong> — store it securely.
+                  {mode === 'team' ? (
+                    <>
+                      <strong style={{ color: 'var(--text-secondary)' }}>Team Login</strong>{' '}
+                      is for named staff accounts invited by your business owner. Got an invite link
+                      instead of a password? Open it directly to set your password.
+                    </>
+                  ) : (
+                    <>
+                      <strong style={{ color: 'var(--text-secondary)' }}>How to sign in:</strong>{' '}
+                      Your Tenant ID and API key are provided when your account is created. The API key is shown{' '}
+                      <strong style={{ color: 'var(--text-secondary)' }}>once only</strong> — store it securely.
+                    </>
+                  )}
                 </p>
               </div>
             </div>

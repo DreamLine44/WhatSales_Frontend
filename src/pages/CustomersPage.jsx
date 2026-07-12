@@ -1,8 +1,54 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Users, RefreshCw, ShoppingBag, Phone } from 'lucide-react';
+import { Users, RefreshCw, ShoppingBag, Phone, Package } from 'lucide-react';
 import { dashApi } from '../api.js';
-import { PageHeader, Card, Btn, EmptyState, Spinner, Avatar, SearchInput, Pagination } from '../components/ui.jsx';
+import { PageHeader, Card, Btn, EmptyState, Spinner, Avatar, SearchInput, Pagination, StatusBadge } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
+
+function OrderHistory({ phone }) {
+  const [orders, setOrders]   = useState(null); // null = not yet loaded
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    // GET /dashboard/:tenantId/orders/customer/:customerPhone — defined in
+    // api.js but never called anywhere before this; this is the first UI
+    // surface for a customer's past-order history.
+    dashApi.ordersByCustomer(phone)
+      .then(r => { if (!cancelled) setOrders(r.data?.orders || []); })
+      .catch(() => { if (!cancelled) setOrders([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [phone]);
+
+  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: '14px 0' }}><Spinner size={18} /></div>;
+  if (!orders?.length) return <div style={{ fontSize: '0.8rem', color: 'var(--text-ghost)', padding: '4px 0' }}>No past orders for this customer.</div>;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {orders.map(o => (
+        <div key={o._id} style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+          background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
+        }}>
+          <Package size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '0.81rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {o.item} × {o.quantity}
+            </div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-ghost)' }}>
+              {new Date(o.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+              {o.shortId ? ` · #${o.shortId}` : ''}
+            </div>
+          </div>
+          {o.totalPrice != null && (
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>D {Number(o.totalPrice).toFixed(0)}</span>
+          )}
+          <StatusBadge status={o.status} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function CustomerCard({ customer }) {
   // [FIX-CUSTOMERS-SCHEMA] UserProfile has no name/customerName field at all — the
@@ -92,6 +138,14 @@ function CustomerCard({ customer }) {
               </div>
             )}
           </div>
+          {phone !== '—' && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Recent Orders</div>
+              {/* Mounted only while expanded — lazily fetches, and unmounts (dropping
+                  cached state) when collapsed, so reopening always shows fresh data. */}
+              <OrderHistory phone={phone} />
+            </div>
+          )}
         </div>
       )}
     </div>

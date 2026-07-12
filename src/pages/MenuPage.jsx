@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { UtensilsCrossed, Plus, Trash2, Pencil, Check, X, ToggleLeft, ToggleRight, Image as ImageIcon, Upload } from 'lucide-react';
+import { UtensilsCrossed, Plus, Trash2, Pencil, Check, X, ToggleLeft, ToggleRight, Image as ImageIcon, Upload, ChevronDown, ChevronUp } from 'lucide-react';
 import { menuApi, bizApi } from '../api.js';
-import { PageHeader, Card, Btn, EmptyState, Spinner, Input } from '../components/ui.jsx';
+import { PageHeader, Card, Btn, EmptyState, Spinner, Input, Toggle } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
 // Menu uses the dedicated /dashboard/:tenantId/menu CRUD endpoints.
@@ -11,14 +11,68 @@ import toast from 'react-hot-toast';
 // DELETE /menu/:itemId      → { ok: true }    ← delete by _id, NOT by name
 // ⚠ price must be a Number, not a string
 // ⚠ always use _id for update/delete — never item name
+//
+// [MENU-FIELDS-1] BusinessConfig's menuItemSchema supports several fields this
+// page never exposed: stockCount (per-item inventory — auto-decrements on
+// order, flips available:false at 0), category (drives the salon flow's
+// services-vs-products split), currency (per-item override), duration/prep
+// (salon-style appointment items), tags, variants (sizes/options), and
+// showImageOnSelect. All are optional — tucked behind an "Advanced options"
+// disclosure so the common case (name/price/description) stays uncluttered.
+
+// Comma-separated string ⇄ array helpers for tags/variants text inputs.
+const toCsv   = (arr) => (arr || []).map(v => (typeof v === 'string' ? v : v?.name || '')).filter(Boolean).join(', ');
+const fromCsv = (str) => str.split(',').map(s => s.trim()).filter(Boolean);
+
+function AdvancedFields({ form, setForm }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 4 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <Input label="Category" value={form.category} placeholder="e.g. services, drinks"
+          onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+          hint="'services' marks a bookable item for salon-style flows" />
+        <Input label="Stock count" type="number" value={form.stockCount} placeholder="Blank = unlimited"
+          onChange={e => setForm(f => ({ ...f, stockCount: e.target.value }))} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+        <Input label="Currency override" value={form.currency} placeholder="e.g. GMD"
+          onChange={e => setForm(f => ({ ...f, currency: e.target.value }))} />
+        <Input label="Duration (min)" type="number" value={form.duration} placeholder="e.g. 45"
+          onChange={e => setForm(f => ({ ...f, duration: e.target.value }))} />
+        <Input label="Prep note" value={form.prep} placeholder="e.g. Arrive early"
+          onChange={e => setForm(f => ({ ...f, prep: e.target.value }))} />
+      </div>
+      <Input label="Tags (comma-separated)" value={form.tagsCsv} placeholder="popular, new, special"
+        onChange={e => setForm(f => ({ ...f, tagsCsv: e.target.value }))} />
+      <Input label="Variants (comma-separated)" value={form.variantsCsv} placeholder="S, M, L"
+        onChange={e => setForm(f => ({ ...f, variantsCsv: e.target.value }))}
+        hint="Sizes or options a customer picks before adding to cart" />
+      <Toggle
+        checked={form.showImageOnSelect}
+        onChange={v => setForm(f => ({ ...f, showImageOnSelect: v }))}
+        label="Show image when item is selected"
+        hint="Turn off to keep responses text-only for this item"
+      />
+    </div>
+  );
+}
 
 function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
   const [editing, setEditing]   = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [form, setForm] = useState({
     name:        item.name,
     price:       item.price,
     description: item.description || '',
     available:   item.available !== false,
+    category:    item.category || '',
+    stockCount:  item.stockCount ?? '',
+    currency:    item.currency || '',
+    duration:    item.duration ?? '',
+    prep:        item.prep || '',
+    tagsCsv:     toCsv(item.tags),
+    variantsCsv: toCsv(item.variants),
+    showImageOnSelect: item.showImageOnSelect !== false,
   });
   const [saving, setSaving]     = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -35,6 +89,14 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
         price:       Number(form.price) || 0,  // ⚠ must be number
         description: form.description || '',
         available:   form.available,
+        category:    form.category.trim() || null,
+        stockCount:  form.stockCount === '' ? null : Number(form.stockCount),
+        currency:    form.currency.trim() || null,
+        duration:    form.duration === '' ? null : Number(form.duration),
+        prep:        form.prep.trim() || null,
+        tags:        fromCsv(form.tagsCsv),
+        variants:    fromCsv(form.variantsCsv),
+        showImageOnSelect: form.showImageOnSelect,
       });
       const newList = r.data?.menuItems || null;
       const updated = newList?.find(i => i._id === item._id) || { ...item, ...form, price: Number(form.price) || 0 };
@@ -112,6 +174,17 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
             <Input label="Price (D)" type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} />
           </div>
           <Input label="Description (optional)" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(v => !v)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none',
+              color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', padding: '2px 0',
+            }}
+          >
+            {showAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Advanced options
+          </button>
+          {showAdvanced && <AdvancedFields form={form} setForm={setForm} />}
           <div style={{ display: 'flex', gap: 8 }}>
             <Btn size="sm" onClick={save} loading={saving}><Check size={13} /> Save</Btn>
             <Btn size="sm" variant="ghost" onClick={() => setEditing(false)}><X size={13} /> Cancel</Btn>
@@ -163,6 +236,19 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
               {item.tags?.length > 0 && item.tags.map(tag => (
                 <span key={tag} style={{ fontSize: '0.67rem', background: 'var(--primary-dim)', color: 'var(--primary)', borderRadius: 99, padding: '1px 7px', fontWeight: 700 }}>{tag}</span>
               ))}
+              {item.category && (
+                <span style={{ fontSize: '0.67rem', background: 'var(--bg-overlay)', color: 'var(--text-muted)', borderRadius: 99, padding: '1px 7px', fontWeight: 700, border: '1px solid var(--border)' }}>{item.category}</span>
+              )}
+              {item.stockCount != null && (
+                <span style={{ fontSize: '0.67rem', background: item.stockCount > 0 ? 'var(--blue-dim, var(--bg-overlay))' : 'var(--red-dim)', color: item.stockCount > 0 ? 'var(--blue)' : 'var(--red)', borderRadius: 99, padding: '1px 7px', fontWeight: 700 }}>
+                  {item.stockCount} in stock
+                </span>
+              )}
+              {item.variants?.length > 0 && (
+                <span style={{ fontSize: '0.67rem', background: 'var(--bg-overlay)', color: 'var(--text-muted)', borderRadius: 99, padding: '1px 7px', fontWeight: 700, border: '1px solid var(--border)' }}>
+                  {item.variants.length} option{item.variants.length !== 1 ? 's' : ''}
+                </span>
+              )}
             </div>
             {item.description && (
               <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 2 }}>{item.description}</div>
@@ -192,7 +278,12 @@ export default function MenuPage() {
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [adding, setAdding]       = useState(false);
-  const [form, setForm] = useState({ name: '', price: '', description: '' });
+  const [form, setForm] = useState({
+    name: '', price: '', description: '',
+    category: '', stockCount: '', currency: '', duration: '', prep: '',
+    tagsCsv: '', variantsCsv: '', showImageOnSelect: true,
+  });
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [saving, setSaving]       = useState(false);
   // [FIX-MENU-IMAGES-2] Optional image attached at creation time — backend's
   // POST /:tenantId/menu already accepts multipart with an "image" field
@@ -249,6 +340,16 @@ export default function MenuPage() {
       // [FIX-MENU-IMAGES-2] When an image was attached, POST multipart so the
       // backend's uploadSingle middleware + Cloudinary step in addMenuItem
       // runs; otherwise keep the original plain-JSON request unchanged.
+      const advanced = {
+        category:    form.category.trim() || null,
+        stockCount:  form.stockCount === '' ? null : Number(form.stockCount),
+        currency:    form.currency.trim() || null,
+        duration:    form.duration === '' ? null : Number(form.duration),
+        prep:        form.prep.trim() || null,
+        tags:        fromCsv(form.tagsCsv),
+        variants:    fromCsv(form.variantsCsv),
+        showImageOnSelect: form.showImageOnSelect,
+      };
       let payload;
       if (newImageFile) {
         payload = new FormData();
@@ -256,16 +357,22 @@ export default function MenuPage() {
         payload.append('price', String(Number(form.price) || 0));
         payload.append('description', form.description || '');
         payload.append('image', newImageFile);
+        for (const [k, v] of Object.entries(advanced)) {
+          if (v === null || v === undefined) continue;
+          payload.append(k, Array.isArray(v) ? JSON.stringify(v) : String(v));
+        }
       } else {
         payload = {
           name:        form.name.trim(),
           price:       Number(form.price) || 0,  // ⚠ must be number
           description: form.description || '',
+          ...advanced,
         };
       }
       const r = await menuApi.add(payload);
       setMenuItems(r.data?.menuItems || menuItems);
-      setForm({ name: '', price: '', description: '' });
+      setForm({ name: '', price: '', description: '', category: '', stockCount: '', currency: '', duration: '', prep: '', tagsCsv: '', variantsCsv: '', showImageOnSelect: true });
+      setShowAdvanced(false);
       clearNewImage();
       setAdding(false);
       toast.success('Item added');
@@ -291,6 +398,18 @@ export default function MenuPage() {
             </div>
             <Input label="Description (optional)" value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Savoury rice cooked in tomato sauce" />
+
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(v => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none',
+                color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', padding: '2px 0',
+              }}
+            >
+              {showAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Advanced options
+            </button>
+            {showAdvanced && <AdvancedFields form={form} setForm={setForm} />}
 
             {/* [FIX-MENU-IMAGES-2] Optional image at creation time, mirrors the
                 per-row control below and stays disabled with the same message

@@ -195,7 +195,7 @@ export default function CatalogPage() {
                   Items missing a price or image are skipped automatically. Menu edits also auto-sync in the background,
                   so manual syncing is mainly useful right after a big menu update.
                 </p>
-                <Btn onClick={runSync} loading={syncing} disabled={!health.connected} fullWidth variant={health.connected ? 'primary' : 'secondary'}>
+                <Btn onClick={runSync} loading={syncing} disabled={!health.connected} fullWidth variant={health.connected ? 'primary' : 'ghost'}>
                   <RefreshCw size={14} /> Sync Now
                 </Btn>
                 {!health.connected && (

@@ -2,18 +2,22 @@ import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, LogOut, ShieldCheck,
-  Menu, X, ChevronRight,
+  Menu, X, ChevronRight, Bell,
 } from 'lucide-react';
 import { useAdmin } from '../store/AdminContext.jsx';
 import { Logo } from './ui.jsx';
+import { adminNotificationsApi } from '../api.js';
 import toast from 'react-hot-toast';
 
-const NAV_ITEMS = [
-  { to: '/admin',         icon: LayoutDashboard, label: 'Dashboard', end: true },
-  { to: '/admin/tenants', icon: Users,           label: 'Tenants',   end: false },
-];
+function NAV_ITEMS_FN(unreadCount) {
+  return [
+    { to: '/admin',          icon: LayoutDashboard, label: 'Dashboard', end: true },
+    { to: '/admin/tenants',  icon: Users,           label: 'Tenants',   end: false },
+    { to: '/admin/messages', icon: Bell,            label: 'Messages',  end: false, badge: unreadCount || undefined },
+  ];
+}
 
-function NavItem({ to, icon: Icon, label, end, onClick }) {
+function NavItem({ to, icon: Icon, label, end, badge, onClick }) {
   return (
     <NavLink
       to={to} end={end} onClick={onClick}
@@ -38,14 +42,23 @@ function NavItem({ to, icon: Icon, label, end, onClick }) {
         <>
           <Icon size={16} style={{ flexShrink: 0 }} />
           <span style={{ flex: 1 }}>{label}</span>
-          {isActive && <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5, flexShrink: 0 }} />}
+          {badge ? (
+            <span style={{
+              fontSize: '0.6rem', fontWeight: 800, minWidth: 17, height: 17,
+              background: 'var(--amber)', color: '#fff',
+              borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: '0 4px', flexShrink: 0,
+            }}>{badge}</span>
+          ) : isActive ? (
+            <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5, flexShrink: 0 }} />
+          ) : null}
         </>
       )}
     </NavLink>
   );
 }
 
-function Sidebar({ onClose, onLogout }) {
+function Sidebar({ onClose, onLogout, unreadCount }) {
   return (
     <div style={{
       width: 240,
@@ -102,7 +115,7 @@ function Sidebar({ onClose, onLogout }) {
         }}>
           Navigation
         </div>
-        {NAV_ITEMS.map(item => (
+        {NAV_ITEMS_FN(unreadCount).map(item => (
           <NavItem key={item.to} {...item} onClick={onClose} />
         ))}
       </nav>
@@ -141,6 +154,7 @@ export default function AdminLayout() {
   const navigate  = useNavigate();
   const location  = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setDrawerOpen(false); }, [location.pathname]);
@@ -150,6 +164,19 @@ export default function AdminLayout() {
     return () => { document.body.style.overflow = ''; };
   }, [drawerOpen]);
 
+  // Mirrors DashboardLayout's tenant-side unread badge — lets a super admin see
+  // at a glance whether any tenant is waiting on a reply, without opening Messages.
+  useEffect(() => {
+    const poll = () => {
+      adminNotificationsApi.list({ limit: 1, direction: 'TO_ADMIN' })
+        .then(r => setUnreadCount(r.data?.unreadCount || 0))
+        .catch(() => {});
+    };
+    poll();
+    const t = setInterval(poll, 90000);
+    return () => clearInterval(t);
+  }, []);
+
   const handleLogout = () => { adminLogout(); navigate('/login'); toast.success('Admin signed out'); };
 
   return (
@@ -157,7 +184,7 @@ export default function AdminLayout() {
 
       {/* Desktop sidebar */}
       <div className="ws-admin-sidebar" style={{ position: 'sticky', top: 0, height: '100vh', flexShrink: 0 }}>
-        <Sidebar onLogout={handleLogout} />
+        <Sidebar onLogout={handleLogout} unreadCount={unreadCount} />
       </div>
 
       {/* Mobile drawer overlay */}
@@ -174,7 +201,7 @@ export default function AdminLayout() {
             boxShadow: '6px 0 32px rgba(0,0,0,0.45)',
             animation: 'slideIn 0.22s ease',
           }}>
-            <Sidebar onClose={() => setDrawerOpen(false)} onLogout={handleLogout} />
+            <Sidebar onClose={() => setDrawerOpen(false)} onLogout={handleLogout} unreadCount={unreadCount} />
           </div>
         </>
       )}
