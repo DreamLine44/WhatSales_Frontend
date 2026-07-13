@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Clock, Package, DollarSign, Bell, Download } from 'lucide-react';
-import { dashApi, orderApi, downloadBlob } from '../api.js';
+import { ShoppingCart, RefreshCw, ChevronDown, ChevronUp, Clock, Package, DollarSign, Download, BellRing } from 'lucide-react';
+import { dashApi, orderApi, downloadBlob, formatMoney } from '../api.js';
+import { useAuth } from '../store/AuthContext.jsx';
 import { PageHeader, Card, StatusBadge, Btn, EmptyState, Spinner, Select, FilterBar, InlineSelect, Pagination } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 // [FIX-ORDERS-STATUS] Full 11-value Order.status enum from the backend model —
@@ -14,7 +15,7 @@ const STATUS_OPTIONS = [
   'payment_failed', 'rejected',
 ];
 
-function OrderRow({ order, onUpdate }) {
+function OrderRow({ order, onUpdate, currency }) {
   const [expanded, setExpanded] = useState(false);
   const [newStatus, setNewStatus] = useState(order.status);
   const [notes, setNotes] = useState('');
@@ -33,17 +34,17 @@ function OrderRow({ order, onUpdate }) {
     finally { setSaving(false); }
   };
 
-  // [FEATURE-NOTIFY-READY] Dedicated re-sendable WhatsApp notification, separate
-  // from the status dropdown — lets staff ping the customer again if they missed
-  // the first "your order is ready" message, without having to toggle status away
-  // and back (which would double-fire the status-change notification instead).
-  const TERMINAL_STATUSES = ['completed', 'cancelled', 'rejected', 'delivered', 'payment_failed'];
-  const canNotifyReady = !TERMINAL_STATUSES.includes(order.status);
+  // Mirrors the backend's own guard (order.status not in a terminal set) so
+  // the button doesn't even appear for orders it would reject anyway.
+  const canNotifyReady = !['completed', 'cancelled', 'rejected', 'payment_failed'].includes(order.status);
+
   const handleNotifyReady = async () => {
     setNotifying(true);
     try {
       await orderApi.notifyReady(order._id);
-      toast.success('Customer notified');
+      onUpdate({ ...order, status: 'ready' });
+      setNewStatus('ready');
+      toast.success('Customer notified — order marked ready');
     } catch (err) { toast.error(err.message || 'Failed to notify customer'); }
     finally { setNotifying(false); }
   };
@@ -85,8 +86,8 @@ function OrderRow({ order, onUpdate }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           {order.totalPrice != null && (
-            <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', letterSpacing: 'normal', fontVariantNumeric: 'tabular-nums' }}>
-              D {Number(order.totalPrice).toFixed(0)}
+            <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', letterSpacing: '-0.02em' }}>
+              {formatMoney(order.totalPrice, currency)}
             </span>
           )}
           <StatusBadge status={order.status} />
@@ -129,8 +130,8 @@ function OrderRow({ order, onUpdate }) {
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {canNotifyReady && (
-                <Btn variant="soft" size="sm" onClick={handleNotifyReady} loading={notifying} title="Re-sendable — safe to click again if the customer missed it">
-                  <Bell size={13} /> Notify Customer — Ready
+                <Btn variant="secondary" size="sm" onClick={handleNotifyReady} loading={notifying}>
+                  <BellRing size={13} /> Notify Ready
                 </Btn>
               )}
               {(newStatus !== order.status || notes.trim()) && (
@@ -146,27 +147,15 @@ function OrderRow({ order, onUpdate }) {
 }
 
 export default function OrdersPage() {
+  const { user } = useAuth();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [exporting, setExporting] = useState(false);
   const requestIdRef = useRef(0);
   const LIMIT = 20;
-
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      // [FEATURE-EXPORT] GET /dashboard/:tenantId/orders/export — CSV, capped
-      // at 5000 rows. Honors the current status filter; a fresh export always
-      // reflects the on-screen filter, not "everything".
-      const r = await orderApi.exportCsv({ status: statusFilter || undefined });
-      downloadBlob(r.data, `orders-${new Date().toISOString().slice(0, 10)}.csv`);
-    } catch (err) { toast.error(err.message || 'Export failed'); }
-    finally { setExporting(false); }
-  };
 
   const load = useCallback((p, sf) => {
     setLoading(true);
@@ -191,16 +180,28 @@ export default function OrdersPage() {
   const pendingCount = orders.filter(o => o.status === 'pending').length;
   const revenue = orders.filter(o => ['confirmed','completed'].includes(o.status)).reduce((s, o) => s + (o.totalPrice || 0), 0);
 
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const r = await orderApi.export({ status: statusFilter || undefined });
+      downloadBlob(r.data, `orders-${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch (err) { toast.error(err.message || 'Export failed'); }
+    finally { setExporting(false); }
+  };
+
   return (
     <div className="fade-in">
       <PageHeader
         icon={ShoppingCart} title="Orders"
         subtitle={`${total} total orders`}
         actions={
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Btn variant="ghost" size="sm" onClick={handleExport} loading={exporting}><Download size={14} /> Export CSV</Btn>
+          <>
+            <Btn variant="ghost" size="sm" onClick={handleExport} loading={exporting}>
+              <Download size={14} /> Export CSV
+            </Btn>
             <Btn variant="ghost" size="sm" onClick={() => load(page, statusFilter)}><RefreshCw size={14} /> Refresh</Btn>
-          </div>
+          </>
         }
       />
 
@@ -220,7 +221,7 @@ export default function OrdersPage() {
                   currently on this page, not a 30-day total (which lives on the
                   Overview page). Ambiguous "D6750 visible" next to Overview's
                   "Revenue (30D)" caused confused support questions per audit. */}
-              <DollarSign size={13} /> D {revenue.toFixed(0)} — this page only
+              <DollarSign size={13} /> {formatMoney(revenue, user?.currency)} — this page only
             </div>
           )}
         </div>
@@ -249,7 +250,7 @@ export default function OrdersPage() {
         <>
           <div className="stagger">
             {orders.map(o => (
-              <OrderRow key={o._id} order={o} onUpdate={u => setOrders(os => os.map(x => x._id === u._id ? u : x))} />
+              <OrderRow key={o._id} order={o} currency={user?.currency} onUpdate={u => setOrders(os => os.map(x => x._id === u._id ? u : x))} />
             ))}
           </div>
           <Pagination page={page} total={total} limit={LIMIT} onChange={setPage} />

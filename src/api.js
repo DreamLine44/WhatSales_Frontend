@@ -71,8 +71,42 @@ const errorInterceptor = err => {
   const msg = err.response?.data?.error || err.response?.data?.message || err.message || 'Network error';
   return Promise.reject(new Error(msg));
 };
-http.interceptors.response.use(r => r, errorInterceptor);
-adminHttp.interceptors.response.use(r => r, errorInterceptor);
+
+// [AUDIT-FIX-SESSION-EXPIRY] A 401 through `http`/`adminHttp` means the stored
+// credential itself is no longer valid (revoked key, expired/rotated staff
+// token, deleted admin) — every call through these two instances is already
+// authenticated, so this can't fire on the login forms themselves (login,
+// staffLogin, completeInvite, adminLogin all use a bare `axios` call, not
+// these instances, precisely so a failed login attempt doesn't trigger this).
+// Without this, the previous behavior was to leave the stale `user`/`isAdmin`
+// state in place and just toast the raw 401 on every subsequent call — the
+// person stays on a page that looks logged in while nothing works. Clearing
+// the credential and hard-redirecting forces a clean re-login instead.
+let sessionExpiryHandled = false;
+function handleTenantSessionExpiry() {
+  if (sessionExpiryHandled || window.location.pathname === '/login') return;
+  sessionExpiryHandled = true;
+  localStorage.removeItem('ws_tenant_id');
+  localStorage.removeItem('ws_api_key');
+  localStorage.removeItem('ws_staff_token');
+  localStorage.removeItem('ws_staff_admin');
+  window.location.href = '/login';
+}
+function handleAdminSessionExpiry() {
+  if (sessionExpiryHandled || window.location.pathname === '/login') return;
+  sessionExpiryHandled = true;
+  sessionStorage.removeItem('ws_admin_session');
+  window.location.href = '/login';
+}
+
+http.interceptors.response.use(r => r, err => {
+  if (err.response?.status === 401) handleTenantSessionExpiry();
+  return errorInterceptor(err);
+});
+adminHttp.interceptors.response.use(r => r, err => {
+  if (err.response?.status === 401) handleAdminSessionExpiry();
+  return errorInterceptor(err);
+});
 
 // ── Auth (tenant login) ───────────────────────────────────────────────────────
 // [FIX-AUTH-API] GET /business/:tenantId — authenticated with tenant API key
@@ -165,47 +199,6 @@ export const bizApi = {
   connectionRequestStatus: () => http.get('/api/whatsapp/request/status'),
 };
 
-// ── WhatsApp Commerce Catalog — /business/:tenantId/wacatalog/* ──────────────
-// GET  health → { connected, status, products, lastSyncedAt, pendingSync,
-//                  lastSyncError, missingImages, outOfStock, mode }
-// status: not_connected | sync_pending | sync_failed | never_synced | needs_sync | healthy
-// POST sync (rate-limited 5/min) → { ok, synced, deleted } or 400 (NO_TOKEN/NO_CATALOG_ID) or 502 (Meta failure)
-// ⚠ Enabling the catalog (via bizApi.updateSettings) requires a catalogId AND a
-//   real (non-SIM_) connected WhatsApp number — the backend returns a clear
-//   400 message in either case, surface it directly to the tenant.
-// ⚠ catalogId itself lives on BusinessConfig.waCatalog (tenant-facing, set from
-//   this page), NOT on the Tenant model — the admin panel doesn't manage it.
-export const catalogApi = {
-  health: () => http.get(`/business/${getTenantId()}/wacatalog/health`),
-  sync:   () => http.post(`/business/${getTenantId()}/wacatalog/sync`),
-};
-
-// ── Admin ↔ Tenant messaging — /admin/notifications ───────────────────────────
-// Two-way inbox between a tenant's admin and the platform super admin.
-// direction: TO_TENANT (platform → tenant) | TO_ADMIN (tenant → platform)
-// severity: info | warning | urgent
-// ⚠ Uses TENANT API KEY via http — /admin/notifications accepts tenant keys
-//   too (requireApiKey, not requireSuperAdminKey). Tenant calls are ALWAYS
-//   auto-scoped server-side to their own tenantId regardless of query params.
-export const notificationsApi = {
-  // No ?direction filter → returns BOTH directions for this tenant (received
-  // from the platform AND their own sent messages) so a single call can drive
-  // an Inbox/Sent tab split client-side.
-  list:     (p = {}) => http.get('/admin/notifications', { params: p }),
-  // Tenant → super admin. Always addressed to the platform; body: { subject, body, severity? }
-  send:     (body) => http.post('/admin/notifications', body),
-  markRead: (id) => http.patch(`/admin/notifications/${id}/read`),
-};
-
-// Super admin side — uses adminHttp (SUPER_ADMIN_API_KEY)
-export const adminNotificationsApi = {
-  // ?tenantId, ?direction, ?unreadOnly=true, ?broadcastId all supported
-  list: (p = {}) => adminHttp.get('/admin/notifications', { params: p }),
-  // Direct: { subject, body, severity?, tenantId }.  Broadcast: { subject, body, severity?, broadcast: true }
-  send: (body) => adminHttp.post('/admin/notifications', body),
-  markRead: (id) => adminHttp.patch(`/admin/notifications/${id}/read`),
-};
-
 // ── Menu CRUD — /dashboard/:tenantId/menu ─────────────────────────────────────
 // GET    → { menuItems, count }
 // POST   → 201 { menuItems }
@@ -252,13 +245,55 @@ export const faqsApi = {
   remove: (faqId) => http.delete(`/dashboard/${getTenantId()}/faqs/${faqId}`),
 };
 
-// ── Promotions / Discount codes CRUD — /dashboard/:tenantId/promotions ───────
-// GET    → { promotions, count }
-// POST   → 201 { promotions }   body: { code, type: 'PERCENT'|'FIXED', value,
-//           active?, minOrderValue?, maxUses?, expiresAt?, description? }
-// PATCH  /:promoId → { promotions }   (code itself cannot be changed after creation)
-// DELETE /:promoId → { ok: true }
-// usedCount is read-only — incremented server-side automatically on redemption.
+// ── WhatsApp Commerce Catalog — /business/:tenantId/wacatalog/* ──────────────
+// GET  /wacatalog/health → { connected, status, products, lastSyncedAt, pendingSync,
+//                             lastSyncError, missingImages, outOfStock, mode }
+//      status ladder: not_connected | never_synced | sync_pending | sync_failed
+//                      | needs_sync | healthy
+// POST /wacatalog/sync   → { ok:true, synced, deleted } or 400/502 { ok:false, reason, status }
+// ⚠ Enabling the catalog (via bizApi.updateSettings) requires a catalogId AND a
+//   real (non-SIM_) connected WhatsApp number — the backend returns a clear
+//   400 message in either case, surface it directly to the tenant.
+export const catalogApi = {
+  health: () => http.get(`/business/${getTenantId()}/wacatalog/health`),
+  sync:   () => http.post(`/business/${getTenantId()}/wacatalog/sync`),
+};
+
+// ── Admin ↔ Tenant messaging — /admin/notifications ───────────────────────────
+// Two-way inbox between a tenant's admin and the platform super admin.
+// direction: TO_TENANT (platform → tenant) | TO_ADMIN (tenant → platform)
+// severity: info | warning | urgent
+// ⚠ Uses TENANT API KEY via http — /admin/notifications accepts tenant keys
+//   too (requireApiKey, not requireSuperAdminKey). Tenant calls are ALWAYS
+//   auto-scoped server-side to their own tenantId regardless of query params.
+export const notificationsApi = {
+  // No ?direction filter → returns BOTH directions for this tenant (received
+  // from the platform AND their own sent messages) so a single call can drive
+  // an Inbox/Sent tab split client-side.
+  list:     (p = {}) => http.get('/admin/notifications', { params: p }),
+  // Tenant → super admin. Always addressed to the platform; body: { subject, body, severity? }
+  send:     (body) => http.post('/admin/notifications', body),
+  markRead: (id) => http.patch(`/admin/notifications/${id}/read`),
+};
+
+// Super admin side — uses adminHttp (SUPER_ADMIN_API_KEY)
+export const adminNotificationsApi = {
+  // ?tenantId, ?direction, ?unreadOnly=true, ?broadcastId all supported
+  list: (p = {}) => adminHttp.get('/admin/notifications', { params: p }),
+  // Direct: { subject, body, severity?, tenantId }.  Broadcast: { subject, body, severity?, broadcast: true }
+  send: (body) => adminHttp.post('/admin/notifications', body),
+  markRead: (id) => adminHttp.patch(`/admin/notifications/${id}/read`),
+};
+
+// ── Order status — PATCH /admin/orders/:id/status ─────────────────────────────
+// ⚠ Uses TENANT API KEY via http (not adminHttp) — /admin routes accept tenant keys too
+// ⚠ status values: pending | payment_pending_verification | confirmed | completed | cancelled | payment_failed | rejected
+// ⚠ Auto-sends WhatsApp notification to customer on confirmed / completed / cancelled / rejected
+// ── Promotions / discount codes — /dashboard/:tenantId/promotions ────────────
+// type: PERCENT (0-100) | FIXED (currency amount). Codes are case-insensitive
+// (stored uppercase) and unique per tenant — POST 409s on a duplicate code.
+// usedCount is server-managed (incremented by orderService when a promo is
+// applied to an order) — never sent from the client.
 export const promotionsApi = {
   list:   () => http.get(`/dashboard/${getTenantId()}/promotions`),
   add:    (body) => http.post(`/dashboard/${getTenantId()}/promotions`, body),
@@ -266,31 +301,15 @@ export const promotionsApi = {
   remove: (promoId) => http.delete(`/dashboard/${getTenantId()}/promotions/${promoId}`),
 };
 
-// ── Order status — PATCH /admin/orders/:id/status ─────────────────────────────
-// ⚠ Uses TENANT API KEY via http (not adminHttp) — /admin routes accept tenant keys too
-// ⚠ status values: pending | payment_pending_verification | confirmed | completed | cancelled | payment_failed | rejected
-// ⚠ Auto-sends WhatsApp notification to customer on confirmed / completed / cancelled / rejected
-// ── Blob download helper — used for CSV exports (orders/bookings) ────────────
-export function downloadBlob(blob, filename) {
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.URL.revokeObjectURL(url);
-}
-
 export const orderApi = {
   updateStatus: (orderId, body) => http.patch(`/admin/orders/${orderId}/status`, body),
-  // POST /dashboard/:tenantId/orders/:orderId/notify-ready — dedicated "Notify
-  // Customer — Ready" button, safe to click again to re-send. 400 if terminal.
+  // GET /dashboard/:tenantId/orders/export → raw CSV (text/csv, Content-Disposition attachment)
+  // ⚠ responseType 'blob' is required — the default 'json' parse would choke on CSV text.
+  export: (params = {}) => http.get(`/dashboard/${getTenantId()}/orders/export`, { params, responseType: 'blob' }),
+  // POST /dashboard/:tenantId/orders/:orderId/notify-ready — re-sends the
+  // "ready for collection" WhatsApp message without going through the full
+  // status-change form. Only valid while status isn't already a terminal one.
   notifyReady: (orderId) => http.post(`/dashboard/${getTenantId()}/orders/${orderId}/notify-ready`),
-  // GET /dashboard/:tenantId/orders/export — CSV download, capped at 5000 rows.
-  // Returns the raw axios response with responseType 'blob' so callers can
-  // trigger a browser download without trying to JSON-parse a CSV body.
-  exportCsv: (params = {}) => http.get(`/dashboard/${getTenantId()}/orders/export`, { params, responseType: 'blob' }),
 };
 
 // ── Booking status — PATCH /admin/bookings/:id/status ─────────────────────────
@@ -299,8 +318,7 @@ export const orderApi = {
 // ⚠ Field is adminNote (not notes) for booking updates
 export const bookingApi = {
   updateStatus: (bookingId, body) => http.patch(`/admin/bookings/${bookingId}/status`, body),
-  // GET /dashboard/:tenantId/bookings/export — CSV download.
-  exportCsv: (params = {}) => http.get(`/dashboard/${getTenantId()}/bookings/export`, { params, responseType: 'blob' }),
+  export: (params = {}) => http.get(`/dashboard/${getTenantId()}/bookings/export`, { params, responseType: 'blob' }),
 };
 
 // ── Sessions — /admin/sessions/:tenantId ──────────────────────────────────────
@@ -369,8 +387,14 @@ export const adminApi = {
   getBusinessModes: () => adminHttp.get('/business/modes'),
 };
 
-// ── Admin session storage ─────────────────────────────────────────────────────
-export const adminSession = {
+// ── Super admin session storage ────────────────────────────────────────────────
+// [AUDIT-FIX-NAMING-COLLISION] Named superAdminSession (not adminSession) — the
+// platform super-admin session stored here (sessionStorage, an API key) is a
+// completely different concept from AuthContext's `adminSession` (a logged-in
+// tenant-side AdminUser from the Staff/Team feature). Same name, different
+// files, never actually imported together today — but a real footgun if a
+// future page ever needed both, since one would silently shadow the other.
+export const superAdminSession = {
   save:  (apiKey) => sessionStorage.setItem('ws_admin_session', JSON.stringify({ apiKey })),
   clear: () => sessionStorage.removeItem('ws_admin_session'),
   get:   () => {
@@ -384,6 +408,31 @@ export const adminSession = {
 // is unreachable. Kept in sync with the 11-value businessMode enum documented
 // in the API contract (POST /admin/tenants). Previously included stale
 // SUPERMARKET/PHARMACY entries that aren't part of the documented backend enum.
+// ── Money formatting ──────────────────────────────────────────────────────────
+// [AUDIT-FIX-CURRENCY] Centralised so every page reads the tenant's configured
+// currency (business.payment.currency, exposed on the auth user as `currency`)
+// instead of hardcoding the Gambian Dalasi symbol 'D'. Falls back to 'D' when
+// no currency is available (e.g. admin pages with no logged-in tenant).
+export function formatMoney(amount, currency = 'D', decimals = 0) {
+  const n = Number(amount) || 0;
+  return `${currency} ${n.toFixed(decimals)}`;
+}
+
+// Triggers a browser download for a Blob response (e.g. from orderApi.export /
+// bookingApi.export). Needed because the CSV is fetched via axios with an
+// auth header — a plain <a href="..."> link can't attach x-api-key, so the
+// file has to be fetched first and turned into an object URL client-side.
+export function downloadBlob(blob, filename) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 export const BUSINESS_MODES = [
   { value: 'RESTAURANT',  label: 'Restaurant',    emoji: '🍽', tier: 'full',  desc: 'Full ordering & payment flow' },
   { value: 'BAKERY',      label: 'Bakery',        emoji: '🥐', tier: 'full',  desc: 'Orders with cake customization' },

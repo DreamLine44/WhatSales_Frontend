@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { UtensilsCrossed, Plus, Trash2, Pencil, Check, X, ToggleLeft, ToggleRight, Image as ImageIcon, Upload, ChevronDown, ChevronUp } from 'lucide-react';
-import { menuApi, bizApi } from '../api.js';
+import { menuApi, bizApi, formatMoney } from '../api.js';
+import { useAuth } from '../store/AuthContext.jsx';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Input, Toggle } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
@@ -57,7 +58,7 @@ function AdvancedFields({ form, setForm }) {
   );
 }
 
-function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
+function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled, currency }) {
   const [editing, setEditing]   = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [form, setForm] = useState({
@@ -171,7 +172,7 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
             <Input label="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-            <Input label="Price (D)" type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} />
+            <Input label={`Price (${currency || 'D'})`} type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} />
           </div>
           <Input label="Description (optional)" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
           <button
@@ -254,7 +255,7 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
               <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 2 }}>{item.description}</div>
             )}
             <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--primary)' }}>
-              D {Number(item.price).toFixed(2)}
+              {formatMoney(item.price, currency, 2)}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
@@ -263,8 +264,8 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
               style={{ color: item.available ? 'var(--primary)' : 'var(--text-ghost)', display: 'flex', cursor: 'pointer', background: 'none', border: 'none', padding: 4 }}>
               {item.available ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
             </button>
-            <Btn variant="ghost" size="sm" onClick={() => setEditing(true)}><Pencil size={13} /></Btn>
-            <Btn variant="ghost" size="sm" onClick={del} loading={deleting} style={{ color: 'var(--red)' }}>
+            <Btn variant="ghost" size="sm" onClick={() => setEditing(true)} title="Edit"><Pencil size={13} /></Btn>
+            <Btn variant="ghost" size="sm" onClick={del} loading={deleting} style={{ color: 'var(--red)' }} title="Delete">
               <Trash2 size={13} />
             </Btn>
           </div>
@@ -275,6 +276,7 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled }) {
 }
 
 export default function MenuPage() {
+  const { user } = useAuth();
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [adding, setAdding]       = useState(false);
@@ -393,7 +395,7 @@ export default function MenuPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
               <Input label="Item name *" value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Jollof Rice" />
-              <Input label="Price (D)" type="number" value={form.price}
+              <Input label={`Price (${user?.currency || 'D'})`} type="number" value={form.price}
                 onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="150" />
             </div>
             <Input label="Description (optional)" value={form.description}
@@ -472,7 +474,7 @@ export default function MenuPage() {
       ) : (
         <div>
           {menuItems.map((item) => (
-            <ItemRow key={item._id} item={item} onUpdate={handleUpdate} onDelete={handleDelete} cloudinaryEnabled={cloudinaryEnabled} />
+            <ItemRow key={item._id} item={item} onUpdate={handleUpdate} onDelete={handleDelete} cloudinaryEnabled={cloudinaryEnabled} currency={user?.currency} />
           ))}
         </div>
       )}

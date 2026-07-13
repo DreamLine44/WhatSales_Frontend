@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Tag, Plus, Trash2, Pencil, Check, X, Percent, Coins, Calendar, Users2 } from 'lucide-react';
-import { promotionsApi } from '../api.js';
+import { promotionsApi, formatMoney } from '../api.js';
+import { useAuth } from '../store/AuthContext.jsx';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Input, Select, Toggle, Badge } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
@@ -21,7 +22,7 @@ function isExpired(d) { return d && new Date(d) < new Date(); }
 // yyyy-mm-dd for <input type="date"> ⇄ ISO string round-trip
 function toDateInput(iso) { return iso ? new Date(iso).toISOString().slice(0, 10) : ''; }
 
-function PromoForm({ initial, onCancel, onSubmit, submitting }) {
+function PromoForm({ initial, onCancel, onSubmit, submitting, currency }) {
   const [form, setForm] = useState({
     code:          initial?.code || '',
     type:          initial?.type || 'PERCENT',
@@ -60,7 +61,7 @@ function PromoForm({ initial, onCancel, onSubmit, submitting }) {
           <option value="PERCENT">Percent off</option>
           <option value="FIXED">Fixed amount off</option>
         </Select>
-        <Input label={form.type === 'PERCENT' ? 'Value (%)' : 'Value (D)'} type="number" min={0} max={form.type === 'PERCENT' ? 100 : undefined}
+        <Input label={form.type === 'PERCENT' ? 'Value (%)' : `Value (${currency || 'D'})`} type="number" min={0} max={form.type === 'PERCENT' ? 100 : undefined}
           value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))} placeholder={form.type === 'PERCENT' ? '10' : '50'} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
@@ -82,7 +83,7 @@ function PromoForm({ initial, onCancel, onSubmit, submitting }) {
   );
 }
 
-function PromoCard({ promo, onUpdated, onDeleted }) {
+function PromoCard({ promo, onUpdated, onDeleted, currency }) {
   const [editing, setEditing]   = useState(false);
   const [saving, setSaving]     = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -127,7 +128,7 @@ function PromoCard({ promo, onUpdated, onDeleted }) {
   if (editing) {
     return (
       <Card style={{ marginBottom: 10, borderColor: 'var(--border-accent)' }}>
-        <PromoForm initial={promo} submitting={saving} onCancel={() => setEditing(false)} onSubmit={save} />
+        <PromoForm initial={promo} submitting={saving} onCancel={() => setEditing(false)} onSubmit={save} currency={currency} />
       </Card>
     );
   }
@@ -150,8 +151,8 @@ function PromoCard({ promo, onUpdated, onDeleted }) {
             {usedUp && <Badge color="amber">Limit reached</Badge>}
           </div>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 6 }}>
-            {promo.type === 'PERCENT' ? `${promo.value}% off` : `D${promo.value} off`}
-            {promo.minOrderValue > 0 ? ` orders over D${promo.minOrderValue}` : ' any order'}
+            {promo.type === 'PERCENT' ? `${promo.value}% off` : `${formatMoney(promo.value, currency)} off`}
+            {promo.minOrderValue > 0 ? ` orders over ${formatMoney(promo.minOrderValue, currency)}` : ' any order'}
           </div>
           {promo.description && (
             <div style={{ fontSize: '0.79rem', color: 'var(--text-muted)', marginBottom: 6 }}>{promo.description}</div>
@@ -169,8 +170,8 @@ function PromoCard({ promo, onUpdated, onDeleted }) {
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'flex-start' }}>
           <Toggle checked={promo.active} onChange={toggleActive} disabled={toggling} />
-          <Btn variant="ghost" size="sm" onClick={() => setEditing(true)}><Pencil size={13} /></Btn>
-          <Btn variant="ghost" size="sm" onClick={remove} loading={deleting}><Trash2 size={13} color="var(--red)" /></Btn>
+          <Btn variant="ghost" size="sm" onClick={() => setEditing(true)} title="Edit"><Pencil size={13} /></Btn>
+          <Btn variant="ghost" size="sm" onClick={remove} loading={deleting} title="Delete"><Trash2 size={13} color="var(--red)" /></Btn>
         </div>
       </div>
     </Card>
@@ -178,6 +179,8 @@ function PromoCard({ promo, onUpdated, onDeleted }) {
 }
 
 export default function PromotionsPage() {
+  const { user } = useAuth();
+  const currency = user?.currency;
   const [promotions, setPromotions] = useState([]);
   const [loading, setLoading]       = useState(true);
   const [adding, setAdding]         = useState(false);
@@ -223,7 +226,7 @@ export default function PromotionsPage() {
       {adding && (
         <Card style={{ marginBottom: 16, borderColor: 'var(--border-accent)' }}>
           <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.9rem', marginBottom: 14 }}>New Promo Code</h3>
-          <PromoForm submitting={saving} onCancel={() => setAdding(false)} onSubmit={create} />
+          <PromoForm submitting={saving} onCancel={() => setAdding(false)} onSubmit={create} currency={currency} />
         </Card>
       )}
 
@@ -241,6 +244,7 @@ export default function PromotionsPage() {
             <PromoCard
               key={p._id}
               promo={p}
+              currency={currency}
               onUpdated={(list, updated) => setPromotions(prev => list || prev.map(x => x._id === updated?._id ? updated : x))}
               onDeleted={id => setPromotions(prev => prev.filter(x => x._id !== id))}
             />

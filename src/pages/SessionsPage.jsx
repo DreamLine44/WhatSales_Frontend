@@ -169,7 +169,7 @@ export default function SessionsPage() {
             <Btn variant={humanOnly ? 'soft' : 'ghost'} size="sm" onClick={() => setHumanOnly(v => !v)}>
               <User size={13} /> {humanOnly ? 'All sessions' : 'Human only'}
             </Btn>
-            <Btn variant="ghost" size="sm" onClick={() => load()}><RefreshCw size={14} /></Btn>
+            <Btn variant="ghost" size="sm" onClick={() => load()} title="Refresh"><RefreshCw size={14} /></Btn>
           </div>
         }
       />

@@ -101,7 +101,6 @@ function BookingsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [exporting, setExporting] = useState(false);
   const requestIdRef = useRef(0);
   const LIMIT = 20;
 
@@ -125,11 +124,11 @@ function BookingsPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
   useEffect(() => { load(page, statusFilter); }, [page, statusFilter]);
 
+  const [exporting, setExporting] = useState(false);
   const handleExport = async () => {
     setExporting(true);
     try {
-      // GET /dashboard/:tenantId/bookings/export — CSV, honors current status filter
-      const r = await bookingApi.exportCsv({ status: statusFilter || undefined });
+      const r = await bookingApi.export({ status: statusFilter || undefined });
       downloadBlob(r.data, `bookings-${new Date().toISOString().slice(0, 10)}.csv`);
     } catch (err) { toast.error(err.message || 'Export failed'); }
     finally { setExporting(false); }
@@ -139,10 +138,10 @@ function BookingsPage() {
     <div className="fade-in">
       <PageHeader icon={Calendar} title="Bookings" subtitle={`${total} bookings`}
         actions={
-          <div style={{ display: 'flex', gap: 8 }}>
+          <>
             <Btn variant="ghost" size="sm" onClick={handleExport} loading={exporting}><Download size={14} /> Export CSV</Btn>
-            <Btn variant="ghost" size="sm" onClick={() => load(page, statusFilter)}><RefreshCw size={14} /></Btn>
-          </div>
+            <Btn variant="ghost" size="sm" onClick={() => load(page, statusFilter)} title="Refresh"><RefreshCw size={14} /></Btn>
+          </>
         }
       />
 

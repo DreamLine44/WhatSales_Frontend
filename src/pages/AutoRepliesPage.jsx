@@ -80,8 +80,8 @@ function FaqRow({ faq, onUpdate, onDelete }) {
             <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{faq.reply}</div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            <Btn variant="ghost" size="sm" onClick={() => setEditing(true)}><Pencil size={13} /></Btn>
-            <Btn variant="ghost" size="sm" onClick={del} loading={deleting} style={{ color: 'var(--red)' }}>
+            <Btn variant="ghost" size="sm" onClick={() => setEditing(true)} title="Edit"><Pencil size={13} /></Btn>
+            <Btn variant="ghost" size="sm" onClick={del} loading={deleting} style={{ color: 'var(--red)' }} title="Delete">
               <Trash2 size={13} />
             </Btn>
           </div>

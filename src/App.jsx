@@ -20,17 +20,17 @@ import SessionsPage from './pages/SessionsPage.jsx';
 import AnalyticsPage from './pages/AnalyticsPage.jsx';
 import CustomersPage from './pages/CustomersPage.jsx';
 import AutoRepliesPage from './pages/AutoRepliesPage.jsx';
-import PromotionsPage from './pages/PromotionsPage.jsx';
-import StaffPage from './pages/StaffPage.jsx';
-import NotificationsPage from './pages/NotificationsPage.jsx';
 import BusinessInfoPage from './pages/BusinessInfoPage.jsx';
 import MenuPage from './pages/MenuPage.jsx';
+import CatalogPage from './pages/CatalogPage.jsx';
+import PreferencesPage from './pages/PreferencesPage.jsx';
+import PromotionsPage from './pages/PromotionsPage.jsx';
 import ServicesPage from './pages/ServicesPage.jsx';
 import OpeningHoursPage from './pages/OpeningHoursPage.jsx';
 import BotMessagesPage from './pages/BotMessagesPage.jsx';
-import CatalogPage from './pages/CatalogPage.jsx';
-import PreferencesPage from './pages/PreferencesPage.jsx';
 import WhatsAppPage from './pages/WhatsAppPage.jsx';
+import NotificationsPage from './pages/NotificationsPage.jsx';
+import StaffPage from './pages/StaffPage.jsx';
 
 // Admin pages
 import AdminDashboardPage from './pages/admin/AdminDashboardPage.jsx';
@@ -97,27 +97,27 @@ export default function App() {
               <Route path="/dashboard"      element={<DashboardPage />} />
               <Route path="/orders"         element={<OrdersPage />} />
               <Route path="/bookings"       element={<BookingsPage />} />
+              <Route path="/promotions"     element={<PromotionsPage />} />
               <Route path="/sessions"       element={<SessionsPage />} />
               <Route path="/analytics"      element={<AnalyticsPage />} />
               <Route path="/customers"      element={<CustomersPage />} />
               <Route path="/auto-replies"   element={<AutoRepliesPage />} />
-              <Route path="/promotions"     element={<PromotionsPage />} />
               <Route path="/messages"       element={<NotificationsPage />} />
               <Route path="/setup/business" element={<BusinessInfoPage />} />
               <Route path="/setup/menu"     element={<MenuPage />} />
+              <Route path="/setup/catalog"  element={<CatalogPage />} />
+              <Route path="/setup/preferences" element={<PreferencesPage />} />
               <Route path="/setup/services" element={<ServicesPage />} />
               <Route path="/setup/hours"    element={<OpeningHoursPage />} />
               <Route path="/setup/bot"      element={<BotMessagesPage />} />
-              <Route path="/setup/catalog"  element={<CatalogPage />} />
-              <Route path="/setup/preferences" element={<PreferencesPage />} />
               <Route path="/setup/whatsapp" element={<WhatsAppPage />} />
               <Route path="/team"           element={<StaffPage />} />
             </Route>
 
             {/* Super admin */}
             <Route element={<RequireAdmin><AdminLayout /></RequireAdmin>}>
-              <Route path="/admin"          element={<AdminDashboardPage />} />
-              <Route path="/admin/tenants"  element={<AdminTenantsPage />} />
+              <Route path="/admin"         element={<AdminDashboardPage />} />
+              <Route path="/admin/tenants" element={<AdminTenantsPage />} />
               <Route path="/admin/messages" element={<AdminMessagesPage />} />
             </Route>
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Users, Plus, Trash2, Copy, Check, Shield, ShieldAlert, ShieldCheck } from 'lucide-react';
-import { staffApi, staffAuthApi } from '../api.js';
+import { staffApi, staffAuthApi, getTenantId } from '../api.js';
 import { useAuth } from '../store/AuthContext.jsx';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Input, Select, Badge, Modal } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
@@ -57,7 +57,7 @@ function InviteModal({ onClose, onInvited }) {
     if (!form.name.trim() || !form.email.trim()) { toast.error('Name and email are required'); return; }
     setSaving(true);
     try {
-      const r = await staffApi.invite(localStorage.getItem('ws_tenant_id'), {
+      const r = await staffApi.invite(getTenantId(), {
         name: form.name.trim(), email: form.email.trim(), role: form.role,
       });
       onInvited(r.data);
@@ -93,7 +93,7 @@ function ClaimOwnerCard({ onClaimed }) {
     if (form.password.length < 8) { toast.error('Password must be at least 8 characters'); return; }
     setSaving(true);
     try {
-      await staffAuthApi.claimOwner(localStorage.getItem('ws_tenant_id'), {
+      await staffAuthApi.claimOwner(getTenantId(), {
         name: form.name.trim(), email: form.email.trim(), password: form.password,
       });
       toast.success('Owner account created — you can now sign in with Team Login too');
@@ -123,14 +123,21 @@ function ClaimOwnerCard({ onClaimed }) {
   );
 }
 
-function AdminRow({ admin, isSelf, onChanged }) {
+function AdminRow({ admin, isSelf, isOwner, onChanged }) {
   const [busy, setBusy] = useState(false);
   const meta = ROLE_META[admin.role] || ROLE_META.STAFF;
+  // [AUDIT-FIX-STAFF-ROLE-GATE] staffApi.update/remove are OWNER-only server-side
+  // (see api.js comments) — a MANAGER/STAFF who lands on /team (the nav item is
+  // hidden for them, but the route itself has no role guard) was previously shown
+  // fully interactive role dropdowns and Disable/Remove buttons for teammates that
+  // would just 403 on click. Not a security hole (backend already enforces this),
+  // but a confusing dead-end. Disable the controls here so the UI matches reality.
+  const canManage = isOwner && !isSelf;
 
   const changeRole = async (role) => {
     setBusy(true);
     try {
-      const r = await staffApi.update(localStorage.getItem('ws_tenant_id'), admin._id, { role });
+      const r = await staffApi.update(getTenantId(), admin._id, { role });
       onChanged(r.data.admin);
     } catch (err) { toast.error(err.message); }
     finally { setBusy(false); }
@@ -139,7 +146,7 @@ function AdminRow({ admin, isSelf, onChanged }) {
   const toggleStatus = async () => {
     setBusy(true);
     try {
-      const r = await staffApi.update(localStorage.getItem('ws_tenant_id'), admin._id, {
+      const r = await staffApi.update(getTenantId(), admin._id, {
         status: admin.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE',
       });
       onChanged(r.data.admin);
@@ -151,7 +158,7 @@ function AdminRow({ admin, isSelf, onChanged }) {
     if (!window.confirm(`Remove ${admin.name} from the team? This can't be undone.`)) return;
     setBusy(true);
     try {
-      await staffApi.remove(localStorage.getItem('ws_tenant_id'), admin._id);
+      await staffApi.remove(getTenantId(), admin._id);
       onChanged(null, admin._id);
     } catch (err) { toast.error(err.message); setBusy(false); }
   };
@@ -185,9 +192,9 @@ function AdminRow({ admin, isSelf, onChanged }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <select
           value={admin.role}
-          disabled={busy || isSelf}
+          disabled={busy || !canManage}
           onChange={e => changeRole(e.target.value)}
-          title={isSelf ? "You can't change your own role" : 'Change role'}
+          title={isSelf ? "You can't change your own role" : !isOwner ? 'Only an Owner can change roles' : 'Change role'}
           style={{
             padding: '6px 10px', borderRadius: 'var(--r-sm)', border: '1.5px solid var(--border)',
             background: 'var(--bg-page)', fontSize: '0.78rem', fontWeight: 700, color: `var(--${meta.color === 'gray' ? 'text-muted' : meta.color})`,
@@ -197,12 +204,12 @@ function AdminRow({ admin, isSelf, onChanged }) {
           <option value="MANAGER">Manager</option>
           <option value="OWNER">Owner</option>
         </select>
-        <Btn size="sm" variant="ghost" onClick={toggleStatus} disabled={busy || isSelf}
-          title={isSelf ? "You can't disable yourself" : undefined}>
+        <Btn size="sm" variant="ghost" onClick={toggleStatus} disabled={busy || !canManage}
+          title={isSelf ? "You can't disable yourself" : !isOwner ? 'Only an Owner can do this' : undefined}>
           {admin.status === 'ACTIVE' ? 'Disable' : 'Re-enable'}
         </Btn>
-        <Btn size="sm" variant="ghost" onClick={remove} disabled={busy || isSelf} style={{ color: 'var(--red)' }}
-          title={isSelf ? "You can't remove yourself" : 'Remove'}>
+        <Btn size="sm" variant="ghost" onClick={remove} disabled={busy || !canManage} style={{ color: 'var(--red)' }}
+          title={isSelf ? "You can't remove yourself" : !isOwner ? 'Only an Owner can do this' : 'Remove'}>
           <Trash2 size={13} />
         </Btn>
       </div>
@@ -220,7 +227,7 @@ export default function StaffPage() {
 
   const load = () => {
     setLoading(true);
-    staffApi.list(localStorage.getItem('ws_tenant_id'))
+    staffApi.list(getTenantId())
       .then(r => {
         const list = r.data?.admins || [];
         setAdmins(list);
@@ -273,7 +280,7 @@ export default function StaffPage() {
       ) : (
         <div>
           {admins.map(a => (
-            <AdminRow key={a._id} admin={a} isSelf={adminSession?._id === a._id} onChanged={handleChanged} />
+            <AdminRow key={a._id} admin={a} isSelf={adminSession?._id === a._id} isOwner={isOwner} onChanged={handleChanged} />
           ))}
         </div>
       )}

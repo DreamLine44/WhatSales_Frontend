@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ShoppingCart, Calendar, UtensilsCrossed,
   Scissors, MessageSquare, BarChart3, Users, HelpCircle,
   Building2, Clock, Bot, Wifi, LogOut, ChevronRight,
-  Menu, X, Zap, Tag, UserCog, Bell, Settings2, ShoppingBag,
+  Menu, X, Zap, ShoppingBag, Bell, Settings2, Tag, UserCog,
 } from 'lucide-react';
 import { useAuth } from '../store/AuthContext.jsx';
 import { Logo } from './ui.jsx';
@@ -169,12 +169,12 @@ function SidebarContent({ user, modeConfig, hasBookings, hasMenu, hasServices, o
           <NavItem to="/dashboard"   icon={LayoutDashboard} label="Dashboard"     end onClick={onClose} />
           {!hasBookings && <NavItem to="/orders"      icon={ShoppingCart}  label="Orders"        onClick={onClose} />}
           {hasBookings  && <NavItem to="/bookings"    icon={Calendar}      label="Bookings"      onClick={onClose} />}
+          {/* Promotions only apply to orders (orderService.saveOrder), not bookings — see promoService.js */}
+          {!hasBookings && <NavItem to="/promotions"  icon={Tag}           label="Promotions"    onClick={onClose} />}
           <NavItem to="/sessions"    icon={MessageSquare}  label="Live Sessions" badge={humanSessionCount || undefined} onClick={onClose} />
           <NavItem to="/analytics"   icon={BarChart3}      label="Analytics"     onClick={onClose} />
           <NavItem to="/customers"   icon={Users}          label="Customers"     onClick={onClose} />
           <NavItem to="/auto-replies" icon={HelpCircle}    label="Auto Replies"  onClick={onClose} />
-          {/* Promotions only apply to orders (orderService.saveOrder), not bookings — see promoService.js */}
-          {!hasBookings && <NavItem to="/promotions"  icon={Tag}           label="Promotions"    onClick={onClose} />}
           <NavItem to="/messages"    icon={Bell}           label="Messages"      badge={unreadMsgCount || undefined} onClick={onClose} />
           {canSeeTeam && <NavItem to="/team" icon={UserCog} label="Team" onClick={onClose} />}
         </NavSection>
@@ -182,10 +182,10 @@ function SidebarContent({ user, modeConfig, hasBookings, hasMenu, hasServices, o
         <NavSection label="Setup">
           <NavItem to="/setup/business" icon={Building2}     label="Business Info"  onClick={onClose} />
           {hasMenu     && <NavItem to="/setup/menu"     icon={UtensilsCrossed} label="Menu / Products" onClick={onClose} />}
+          {hasMenu     && <NavItem to="/setup/catalog"  icon={ShoppingBag}     label="WhatsApp Catalog" onClick={onClose} />}
           {hasServices && <NavItem to="/setup/services" icon={Scissors}        label="Services"        onClick={onClose} />}
           <NavItem to="/setup/hours"    icon={Clock}    label="Opening Hours" onClick={onClose} />
           <NavItem to="/setup/bot"      icon={Bot}      label="Bot Messages"  onClick={onClose} />
-          {hasMenu     && <NavItem to="/setup/catalog"  icon={ShoppingBag}     label="WhatsApp Catalog" onClick={onClose} />}
           <NavItem to="/setup/preferences" icon={Settings2} label="Preferences" onClick={onClose} />
           <NavItem to="/setup/whatsapp" icon={Wifi}     label="WhatsApp Status" onClick={onClose} />
         </NavSection>

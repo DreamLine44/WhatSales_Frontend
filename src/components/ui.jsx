@@ -432,7 +432,7 @@ export function EmptyState({ icon: Icon, title, description, action }) {
 }
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
-export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend }) {
+export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend, plain = false }) {
   const colors = {
     green:  { icon: 'rgba(21,128,61,0.1)',  text: '#15803d', border: 'rgba(21,128,61,0.18)' },
     amber:  { icon: 'rgba(180,83,9,0.1)',   text: '#b45309', border: 'rgba(180,83,9,0.18)' },
@@ -472,7 +472,7 @@ export function StatCard({ label, value, sub, icon: Icon, color = 'green', trend
         <div style={{ fontSize: '0.73rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>{label}</div>
         <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', letterSpacing: '-0.01em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
           {(() => {
-            if (typeof value !== 'string') return value ?? '—';
+            if (plain || typeof value !== 'string') return value ?? '—';
             // Support both regular space and narrow no-break space (\u202f)
             const spaceIdx = value.search(/[ \u202f]/);
             if (spaceIdx > 0) {
@@ -821,7 +821,7 @@ export function InlineSelect({ value, onChange, children, style = {} }) {
 // ── Avatar ────────────────────────────────────────────────────────────────────
 export function Avatar({ name = '', size = 36, colorSeed }) {
   const colors = ['var(--primary)', 'var(--blue)', 'var(--purple)', 'var(--teal)', 'var(--amber)'];
-  const seed = colorSeed ?? name.charCodeAt(0);
+  const seed = colorSeed ?? (name.charCodeAt(0) || 0);
   const color = colors[seed % colors.length];
   const initials = name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
   return (

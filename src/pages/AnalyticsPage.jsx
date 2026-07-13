@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { BarChart3, TrendingUp, ShoppingCart, Calendar, RefreshCw } from 'lucide-react';
-import { dashApi } from '../api.js';
+import { dashApi, formatMoney } from '../api.js';
+import { useAuth } from '../store/AuthContext.jsx';
 import { PageHeader, StatCard, Card, Btn, Spinner, InlineSelect } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
@@ -28,6 +29,7 @@ function MetricBar({ label, value, displayValue, color, max, suffix = '' }) {
 }
 
 export default function AnalyticsPage() {
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [timeseries, setTimeseries] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -67,7 +69,7 @@ export default function AnalyticsPage() {
               <option value={30}>Last 30 days</option>
               <option value={90}>Last 90 days</option>
             </InlineSelect>
-            <Btn variant="ghost" size="sm" onClick={load}><RefreshCw size={14} /></Btn>
+            <Btn variant="ghost" size="sm" onClick={load} title="Refresh"><RefreshCw size={14} /></Btn>
           </div>
         }
       />
@@ -86,7 +88,7 @@ export default function AnalyticsPage() {
             <StatCard label="Total Bookings" value={data.bookings ?? '—'} icon={Calendar}     color="blue"  sub={`Last ${days} days`} />
             <StatCard
               label="Revenue"
-              value={data.revenue != null ? `D ${Number(data.revenue).toFixed(0)}` : '—'}
+              value={data.revenue != null ? formatMoney(data.revenue, user?.currency) : '—'}
               icon={TrendingUp} color="amber" sub="Confirmed orders"
             />
           </div>
@@ -102,7 +104,7 @@ export default function AnalyticsPage() {
               <MetricBar
                 label="Revenue earned"
                 value={data.revenue || 0}
-                displayValue={`D ${Number(data.revenue || 0).toFixed(0)}`}
+                displayValue={formatMoney(data.revenue || 0, user?.currency)}
                 color="var(--amber)" max={Math.max(data.revenue || 0, 1)}
               />
             </div>

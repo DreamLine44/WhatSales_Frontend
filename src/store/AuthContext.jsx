@@ -49,6 +49,11 @@ function buildUserFromResponse(tenantId, businessData, tenantStatus, prevUser = 
         connected:     tenantStatus.whatsapp?.connected === true,
       },
       plan:           tenantStatus.plan   || 'FREE',
+      // [AUDIT-FIX-CURRENCY] Surface the tenant's configured currency symbol so
+      // every page that displays money can read it from useAuth() instead of
+      // hardcoding the Gambian Dalasi symbol. Falls back to 'D' only when the
+      // backend hasn't set one, matching the previous hardcoded default.
+      currency:       biz.payment?.currency || 'D',
       // [AUDIT] Default to PENDING, not ACTIVE, when status is missing — PENDING
       // is the tenant's real starting status ("Bot will not respond" — see
       // AdminTenantsPage STATUS_META), so this fails toward "not live" rather
@@ -81,6 +86,9 @@ function buildUserFromResponse(tenantId, businessData, tenantStatus, prevUser = 
     // to PENDING here too, for the same fail-toward-not-live reason as above.
     plan:           'FREE',
     status:         'PENDING',
+    // [AUDIT-FIX-CURRENCY] Same as the primary branch above — read from
+    // business.payment.currency, defaulting to 'D' if not configured.
+    currency:       biz.payment?.currency || 'D',
     onboardingStep,
   };
 }

@@ -4,7 +4,7 @@ import {
   ImageOff, PackageX, Loader2, Info,
 } from 'lucide-react';
 import { bizApi, catalogApi } from '../api.js';
-import { PageHeader, Card, Btn, Input, Select, Toggle, Badge, InfoBanner, StatCard, SectionHeading } from '../components/ui.jsx';
+import { PageHeader, Card, Btn, Select, Toggle, Badge, InfoBanner, StatCard, SectionHeading } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
 // ── AUDIT NOTE ─────────────────────────────────────────────────────────────
@@ -17,7 +17,7 @@ import toast from 'react-hot-toast';
 // so a tenant hitting a guard sees the real reason, not a generic failure.
 
 const STATUS_META = {
-  not_connected: { label: 'Not Connected', color: 'gray',  Icon: XCircle,     desc: 'Enable the catalog and add your Catalog ID below to get started.' },
+  not_connected: { label: 'Not Connected', color: 'gray',  Icon: XCircle,     desc: 'Ask your admin to connect a Catalog ID, then enable it below.' },
   never_synced:  { label: 'Never Synced',  color: 'amber', Icon: Clock,       desc: 'Catalog is configured but has never been synced to Meta yet.' },
   sync_pending:  { label: 'Sync Pending',  color: 'blue',  Icon: Loader2,     desc: 'A recent menu change is queued and will sync automatically shortly.' },
   sync_failed:   { label: 'Sync Failed',   color: 'red',   Icon: AlertCircle, desc: 'The last sync attempt failed — see the error below.' },
@@ -41,7 +41,8 @@ export default function CatalogPage() {
   const [loading, setLoading]   = useState(true);
   const [health, setHealth]     = useState(null);
   const [phoneOk, setPhoneOk]   = useState(false); // real (non-SIM_) connected number on file
-  const [form, setForm]         = useState({ enabled: false, catalogId: '', mode: 'AI_DECIDES' });
+  const [form, setForm]         = useState({ enabled: false, mode: 'AI_DECIDES' });
+  const [catalogId, setCatalogId] = useState(''); // read-only — set by the platform admin, see [AUDIT-FIX-CATALOG-ADMIN-1]
   const [saving, setSaving]     = useState(false);
   const [syncing, setSyncing]   = useState(false);
 
@@ -52,10 +53,10 @@ export default function CatalogPage() {
       setHealth(h.data);
       const wa = biz.data?.business?.waCatalog || {};
       setForm({
-        enabled:   !!wa.enabled,
-        catalogId: wa.catalogId || '',
-        mode:      wa.mode || 'AI_DECIDES',
+        enabled: !!wa.enabled,
+        mode:    wa.mode || 'AI_DECIDES',
       });
+      setCatalogId(wa.catalogId || '');
       const phoneNumberId = biz.data?.business?.phoneNumberId;
       setPhoneOk(!!phoneNumberId && !String(phoneNumberId).startsWith('SIM_'));
     } catch (err) {
@@ -69,17 +70,20 @@ export default function CatalogPage() {
   useEffect(() => { load(); }, []);
 
   const save = async () => {
-    if (form.enabled && !form.catalogId.trim()) {
-      toast.error('Enter a Catalog ID before enabling the catalog.');
+    if (form.enabled && !catalogId) {
+      toast.error('No Catalog ID is set for your account yet — contact your admin to get one connected before enabling.');
       return;
     }
     setSaving(true);
     try {
+      // [AUDIT-FIX-CATALOG-TENANT-LOCKDOWN-1] catalogId is no longer sent from
+      // here — it's admin-only now (PATCH /admin/tenants/:id). Sending it would
+      // be silently stripped by the backend anyway, but omitting it keeps this
+      // request honest about what a tenant actually controls: on/off + offer mode.
       await bizApi.updateSettings({
         waCatalog: {
-          enabled:   form.enabled,
-          catalogId: form.catalogId.trim(),
-          mode:      form.mode,
+          enabled: form.enabled,
+          mode:    form.mode,
         },
       });
       toast.success('Catalog settings saved');
@@ -144,9 +148,9 @@ export default function CatalogPage() {
         <>
           {/* Health stats */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
-            <StatCard label="Status" value={meta.label} icon={meta.Icon} color={meta.color} />
+            <StatCard label="Status" value={meta.label} icon={meta.Icon} color={meta.color} plain />
             <StatCard label="Products Live" value={String(health.products ?? 0)} icon={ShoppingBag} color="blue" />
-            <StatCard label="Last Synced" value={fmtDate(health.lastSyncedAt)} icon={Clock} color="teal" />
+            <StatCard label="Last Synced" value={fmtDate(health.lastSyncedAt)} icon={Clock} color="teal" plain />
             <StatCard
               label="Data Issues"
               value={String((health.missingImages || 0) + (health.outOfStock || 0))}
@@ -167,13 +171,29 @@ export default function CatalogPage() {
                   label="Enable WhatsApp Catalog"
                   hint="Lets customers browse & order products directly inside WhatsApp"
                 />
-                <Input
-                  label="Catalog ID"
-                  placeholder="e.g. 1234567890123456"
-                  value={form.catalogId}
-                  onChange={e => setForm(f => ({ ...f, catalogId: e.target.value }))}
-                  hint="Found in Meta Commerce Manager — ask your admin if you don't have this yet"
-                />
+                {/* [AUDIT-FIX-CATALOG-TENANT-LOCKDOWN-1] Catalog ID is read-only here —
+                    setting it correctly requires Meta Commerce Manager + Business
+                    Settings access this account doesn't have (and shouldn't need).
+                    Your admin sets this once; you just toggle it on/off and pick
+                    how the bot offers it. */}
+                <div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                    Catalog ID
+                  </div>
+                  <div style={{
+                    background: 'var(--bg-overlay)', borderRadius: 'var(--r-md)',
+                    padding: '10px 12px', border: '1.5px solid var(--border)',
+                    fontSize: '0.85rem', color: catalogId ? 'var(--text-primary)' : 'var(--text-ghost)',
+                    fontFamily: catalogId ? 'monospace' : 'inherit',
+                  }}>
+                    {catalogId || 'Not set yet'}
+                  </div>
+                  <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.5 }}>
+                    {catalogId
+                      ? "Set by your admin. Contact them if this needs to change."
+                      : 'Contact your admin to get your Meta Catalog ID connected.'}
+                  </p>
+                </div>
                 <Select
                   label="Offer Mode"
                   value={form.mode}
@@ -195,12 +215,12 @@ export default function CatalogPage() {
                   Items missing a price or image are skipped automatically. Menu edits also auto-sync in the background,
                   so manual syncing is mainly useful right after a big menu update.
                 </p>
-                <Btn onClick={runSync} loading={syncing} disabled={!health.connected} fullWidth variant={health.connected ? 'primary' : 'ghost'}>
+                <Btn onClick={runSync} loading={syncing} disabled={!health.connected} fullWidth variant={health.connected ? 'primary' : 'secondary'}>
                   <RefreshCw size={14} /> Sync Now
                 </Btn>
                 {!health.connected && (
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-ghost)', marginTop: 8, textAlign: 'center' }}>
-                    Enable the catalog with a Catalog ID above first.
+                    {catalogId ? 'Enable the catalog above first.' : 'Ask your admin to connect a Catalog ID first.'}
                   </div>
                 )}
               </Card>

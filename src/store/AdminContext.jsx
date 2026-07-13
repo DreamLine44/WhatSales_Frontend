@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { adminSession } from '../api.js';
+import { superAdminSession } from '../api.js';
 import axios from 'axios';
 
 const AdminContext = createContext(null);
@@ -11,13 +11,13 @@ export function AdminProvider({ children }) {
   // [FIX-ADMIN-VALIDATING] True while the mount-time session re-validation is in-flight.
   // RequireAdmin checks this before redirecting to /login so valid sessions don't
   // flash-redirect during the async key check on page refresh.
-  const [validating, setValidating] = useState(() => !!adminSession.get());
+  const [validating, setValidating] = useState(() => !!superAdminSession.get());
 
   // [FIX-ADMIN-RESTORE] On mount, re-validate any stored session against the live API.
   // Without this, a rotated super-admin key stays "valid" in the frontend until the
   // first actual API call fails, causing confusing 403 errors mid-session.
   useEffect(() => {
-    const session = adminSession.get();
+    const session = superAdminSession.get();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!session?.apiKey) { setValidating(false); return; }
     axios.get(`${BASE_URL}/admin/tenants`, {
@@ -27,7 +27,7 @@ export function AdminProvider({ children }) {
       setIsAdmin(true);
     }).catch(() => {
       // Key is no longer valid — clear stale session
-      adminSession.clear();
+      superAdminSession.clear();
       setIsAdmin(false);
     }).finally(() => {
       setValidating(false);
@@ -48,12 +48,12 @@ export function AdminProvider({ children }) {
     } finally {
       setLoading(false);
     }
-    adminSession.save(apiKey);
+    superAdminSession.save(apiKey);
     setIsAdmin(true);
   }, []);
 
   const adminLogout = useCallback(() => {
-    adminSession.clear();
+    superAdminSession.clear();
     setIsAdmin(false);
   }, []);
 

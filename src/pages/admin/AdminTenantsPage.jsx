@@ -463,6 +463,11 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
       appId:     initialTenant.meta?.appId || '',
       appSecret: '',
     },
+    // [AUDIT-FIX-CATALOG-ADMIN-1] Not present on `initialTenant` — the tenant
+    // list endpoint only returns businessMode, not the full BusinessConfig
+    // (see listTenants in tenantController.js). Populated by the fetch effect
+    // below once this modal has the tenant's real _id to look it up with.
+    waCatalog: { catalogId: '' },
   });
   const [saving, setSaving]             = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
@@ -472,8 +477,24 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
   const set     = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const setWA   = (k, v) => setForm(f => ({ ...f, whatsapp: { ...f.whatsapp, [k]: v } }));
   const setMeta = (k, v) => setForm(f => ({ ...f, meta: { ...f.meta, [k]: v } }));
+  const setCatalog = (k, v) => setForm(f => ({ ...f, waCatalog: { ...f.waCatalog, [k]: v } }));
 
-  // [FIX-EDIT-2] applyUpdate accepts either a patch object or a function (prev => patch).
+  // [AUDIT-FIX-CATALOG-ADMIN-1] Fetch the tenant's current catalogId on mount —
+  // it lives on BusinessConfig, which the list view this modal was opened from
+  // never fetched (only businessMode — see listTenants in tenantController.js).
+  // GET /admin/tenants/:id returns { tenant, business }, so one call here is
+  // enough to backfill the field for editing.
+  useEffect(() => {
+    let cancelled = false;
+    adminApi.getTenant(initialTenant._id)
+      .then(r => {
+        if (cancelled) return;
+        const catalogId = r.data?.business?.waCatalog?.catalogId || '';
+        if (catalogId) setForm(f => ({ ...f, waCatalog: { ...f.waCatalog, catalogId } }));
+      })
+      .catch(() => {}); // Non-fatal — field just stays blank/editable if this fails
+    return () => { cancelled = true; };
+  }, [initialTenant._id]);
   // Using setTenant's functional form ensures we always merge from the latest state,
   // not from a stale closure snapshot — critical when saveWA and saveInfo can be
   // called in quick succession.
@@ -568,6 +589,15 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
 
       const body = { whatsapp: waPayload };
       if (Object.keys(metaPayload).length) body.meta = metaPayload;
+      // [AUDIT-FIX-CATALOG-ADMIN-1] Sent as a top-level 'waCatalog.catalogId'
+      // key (flat, not nested) — matches updateTenant's ALLOWED entry and
+      // avoids the nested-object nested-under-whatsapp mistake [FIX-META-PLACEMENT]
+      // already documents for meta.appId/appSecret. Omitted entirely when blank
+      // so clearing this field isn't possible by accident via an empty save —
+      // use the Remove/clear affordance below for that instead.
+      if (form.waCatalog.catalogId.trim()) {
+        body['waCatalog.catalogId'] = form.waCatalog.catalogId.trim();
+      }
 
       const r = await adminApi.updateTenant(tenant._id, body);
       const serverWA   = r.data?.tenant?.whatsapp || {};
@@ -847,17 +877,25 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
                 <option key={v} value={v}>{v}</option>
               ))}
             </Select>
-            {/* [FIX-CATALOG-LOCATION] Catalog ID lives on BusinessConfig.waCatalog,
-                not on the Tenant model at all — it's a tenant-facing setting (PATCH
-                /dashboard/:tenantId/settings), not an admin-only credential, so it's
-                configured from the tenant's own Menu page (WA Catalog card) once
-                WhatsApp is connected, not from this admin panel. */}
-            <div style={{
-              background: 'var(--bg-overlay)', borderRadius: 'var(--r-md)',
-              padding: '9px 12px', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5,
-            }}>
-              WhatsApp Catalog (Catalog ID, sync mode) is configured by the tenant from
-              their own Menu page once WhatsApp is connected — it's not an admin-side credential.
+            {/* [AUDIT-FIX-CATALOG-ADMIN-1] Catalog ID moved here from the tenant's own
+                Menu page after a production incident where a tenant had no way to
+                diagnose or fix a wrong/misconfigured catalog — finding and setting
+                the correct ID requires navigating Meta Commerce Manager, Business
+                Settings → System Users, and per-catalog asset permissions, none of
+                which a tenant business owner has access to. Tenants keep the
+                enable/disable toggle and offer-mode dropdown on their Catalog page;
+                this is the only place catalogId itself can be set. */}
+            <div>
+              <Input label="WhatsApp Catalog ID (optional)" value={form.waCatalog.catalogId}
+                onChange={e => setCatalog('catalogId', e.target.value)}
+                placeholder="From Meta Commerce Manager → Catalog → Settings" />
+              <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+                Must belong to the same Business Portfolio as this tenant's WhatsApp
+                Business Account, and the token above must have Manage-catalog
+                permission on it (Business Settings → System users → Assign people
+                → this catalog). The tenant only sees a read-only status + on/off
+                toggle on their own Catalog page.
+              </p>
             </div>
 
 

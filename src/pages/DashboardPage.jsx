@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingCart, Calendar, Users, MessageSquare, TrendingUp, Zap, ArrowRight, CheckCircle2, Circle, RefreshCw } from 'lucide-react';
 import { useAuth } from '../store/AuthContext.jsx';
-import { dashApi, getModeConfig, needsBookings } from '../api.js';
+import { dashApi, getModeConfig, needsBookings, formatMoney } from '../api.js';
 import { StatCard, Card, Btn, SectionHeading, Skeleton, SkeletonCard } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
@@ -104,20 +104,23 @@ export default function DashboardPage() {
   const modeConfig = getModeConfig(mode);
   const hasBookings = needsBookings(mode);
 
-  const load = useCallback(() => {
-    setLoading(true);
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
     dashApi.overview()
       .then(r => setOverview(r.data))
       .catch(err => toast.error(err.message || 'Failed to load dashboard'))
-      .finally(() => setLoading(false));
+      .finally(() => { if (!silent) setLoading(false); });
   }, []);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   // Auto-refresh dashboard every 120s (reduced from 60s — halves load on /dashboard/:id/overview)
+  // [AUDIT-FIX-DASHBOARD-REFRESH-FLICKER] silent=true — without this, every background
+  // refresh replaced the whole page with loading skeletons for a moment, which read as
+  // the dashboard randomly blanking out every 2 minutes rather than a quiet data refresh.
   useEffect(() => {
-    const t = setInterval(load, 120000);
+    const t = setInterval(() => load(true), 120000);
     return () => clearInterval(t);
   }, [load]);
 
@@ -239,7 +242,7 @@ export default function DashboardPage() {
             <StatCard label="Customers" value={d.customers ?? 0} icon={Users} color="blue" sub="Total unique" />
             <StatCard
               label="Revenue (30d)"
-              value={d.revenue != null ? `D ${Number(d.revenue).toFixed(0)}` : '—'}
+              value={d.revenue != null ? formatMoney(d.revenue, user?.currency) : '—'}
               icon={TrendingUp} color="amber" sub="Confirmed orders"
             />
             <StatCard label="Live Sessions" value={overview?.activeHumanSessions ?? 0} icon={MessageSquare} color="purple" sub="Human-mode active" />

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Scissors, Plus, Trash2, Pencil, Check, X } from 'lucide-react';
-import { servicesApi } from '../api.js';
+import { servicesApi, formatMoney } from '../api.js';
+import { useAuth } from '../store/AuthContext.jsx';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Input } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
@@ -12,7 +13,7 @@ import toast from 'react-hot-toast';
 // DELETE /services/:serviceId   → { ok: true }
 // ⚠ price and duration must be Numbers, not strings
 
-function ServiceRow({ service, onUpdate, onDelete }) {
+function ServiceRow({ service, onUpdate, onDelete, currency }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     name: service.name,
@@ -61,7 +62,7 @@ function ServiceRow({ service, onUpdate, onDelete }) {
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
             <Input label="Service name" value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-            <Input label="Price (D)" type="number" value={form.price}
+            <Input label={`Price (${currency || 'D'})`} type="number" value={form.price}
               onChange={e => setForm(f => ({ ...f, price: e.target.value }))} />
             <Input label="Duration (min)" type="number" value={form.duration}
               onChange={e => setForm(f => ({ ...f, duration: e.target.value }))} />
@@ -82,7 +83,7 @@ function ServiceRow({ service, onUpdate, onDelete }) {
             )}
             <div style={{ display: 'flex', gap: 12 }}>
               <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--primary)' }}>
-                D {Number(service.price).toFixed(0)}
+                {formatMoney(service.price, currency)}
               </span>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 {service.duration || 30} min
@@ -90,8 +91,8 @@ function ServiceRow({ service, onUpdate, onDelete }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            <Btn variant="ghost" size="sm" onClick={() => setEditing(true)}><Pencil size={13} /></Btn>
-            <Btn variant="ghost" size="sm" onClick={del} loading={deleting} style={{ color: 'var(--red)' }}>
+            <Btn variant="ghost" size="sm" onClick={() => setEditing(true)} title="Edit"><Pencil size={13} /></Btn>
+            <Btn variant="ghost" size="sm" onClick={del} loading={deleting} style={{ color: 'var(--red)' }} title="Delete">
               <Trash2 size={13} />
             </Btn>
           </div>
@@ -102,6 +103,7 @@ function ServiceRow({ service, onUpdate, onDelete }) {
 }
 
 export default function ServicesPage() {
+  const { user } = useAuth();
   const [services, setServices] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [adding, setAdding]     = useState(false);
@@ -159,7 +161,7 @@ export default function ServicesPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
               <Input label="Service name *" value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Haircut" />
-              <Input label="Price (D)" type="number" value={form.price}
+              <Input label={`Price (${user?.currency || 'D'})`} type="number" value={form.price}
                 onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="200" />
               <Input label="Duration (min)" type="number" value={form.duration}
                 onChange={e => setForm(f => ({ ...f, duration: e.target.value }))} />
@@ -186,7 +188,7 @@ export default function ServicesPage() {
       ) : (
         <div>
           {services.map((s) => (
-            <ServiceRow key={s._id} service={s} onUpdate={handleUpdate} onDelete={handleDelete} />
+            <ServiceRow key={s._id} service={s} onUpdate={handleUpdate} onDelete={handleDelete} currency={user?.currency} />
           ))}
         </div>
       )}
