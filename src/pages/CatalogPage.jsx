@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ShoppingBag, RefreshCw, CheckCircle2, AlertCircle, Clock, XCircle,
-  ImageOff, PackageX, Loader2, Info,
+  ImageOff, PackageX, Loader2, Info, PowerOff,
 } from 'lucide-react';
 import { bizApi, catalogApi } from '../api.js';
 import { PageHeader, Card, Btn, Select, Toggle, Badge, InfoBanner, StatCard, SectionHeading } from '../components/ui.jsx';
@@ -12,14 +12,24 @@ import toast from 'react-hot-toast';
 // /health + /sync) with zero frontend surface before this page: a tenant had no
 // way to see whether their Meta catalog was connected, healthy, or stale, and
 // no way to enable it, configure it, or trigger a sync. This page is that
-// surface. All copy below mirrors the exact validation errors the backend
-// returns (see updateBusinessSettings's waCatalog branch and syncWaCatalog),
-// so a tenant hitting a guard sees the real reason, not a generic failure.
-
+// surface.
+//
+// [AUDIT-FIX-CATALOG-HEALTH-SHAPE] GET /wacatalog/health does NOT return a
+// pre-computed `status` string, `products`, `connected`, `missingImages`, or
+// `outOfStock` — this page (and api.js's comment above catalogApi) previously
+// assumed a response shape the backend never actually implements. The real
+// shape (see businessController.js getWaCatalogHealth) is:
+//   { enabled, catalogId, lastSyncedAt, lastSyncError: string|null,
+//     totalItems, itemsReady, itemsSkipped, skippedDetail: [{id,name,reasons}] }
+// `reasons` is drawn from waCatalogHelpers.isSyncableForCatalog and is only
+// ever 'invalid_or_zero_price' and/or 'missing_image' — there's no
+// "out of stock" concept anywhere in the schema or the sync-eligibility gate,
+// so that stat has been dropped rather than invented. `status`/`connected`
+// are now derived client-side from the real fields below instead.
 const STATUS_META = {
   not_connected: { label: 'Not Connected', color: 'gray',  Icon: XCircle,     desc: 'Ask your admin to connect a Catalog ID, then enable it below.' },
+  disabled:      { label: 'Disabled',      color: 'gray',  Icon: PowerOff,    desc: 'Catalog is configured but turned off — enable it below to go live.' },
   never_synced:  { label: 'Never Synced',  color: 'amber', Icon: Clock,       desc: 'Catalog is configured but has never been synced to Meta yet.' },
-  sync_pending:  { label: 'Sync Pending',  color: 'blue',  Icon: Loader2,     desc: 'A recent menu change is queued and will sync automatically shortly.' },
   sync_failed:   { label: 'Sync Failed',   color: 'red',   Icon: AlertCircle, desc: 'The last sync attempt failed — see the error below.' },
   needs_sync:    { label: 'Needs Sync',    color: 'amber', Icon: AlertCircle, desc: "It's been over 24 hours since the last successful sync." },
   healthy:       { label: 'Healthy',       color: 'green', Icon: CheckCircle2, desc: 'Your catalog is up to date with Meta.' },
@@ -30,6 +40,21 @@ const MODE_OPTIONS = [
   { value: 'ALWAYS_OFFER', label: 'Always Offer',             hint: 'The bot offers the catalog on every order start.' },
   { value: 'MANUAL_ONLY',  label: 'Manual Only',               hint: 'The catalog is never sent automatically.' },
 ];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// [AUDIT-FIX-CATALOG-HEALTH-SHAPE] Derives the same 6-state ladder the UI
+// always had, but from fields the backend actually returns instead of a
+// `status` string that never existed server-side.
+function deriveStatus(h) {
+  if (!h) return 'not_connected';
+  if (!h.catalogId) return 'not_connected';
+  if (!h.enabled) return 'disabled';
+  if (h.lastSyncError) return 'sync_failed';
+  if (!h.lastSyncedAt) return 'never_synced';
+  if (Date.now() - new Date(h.lastSyncedAt).getTime() > DAY_MS) return 'needs_sync';
+  return 'healthy';
+}
 
 function fmtDate(d) {
   if (!d) return 'Never';
@@ -74,6 +99,10 @@ export default function CatalogPage() {
       toast.error('No Catalog ID is set for your account yet — contact your admin to get one connected before enabling.');
       return;
     }
+    if (form.enabled && !phoneOk) {
+      toast.error('WhatsApp is not connected yet — connect a real number before enabling the catalog.');
+      return;
+    }
     setSaving(true);
     try {
       // [AUDIT-FIX-CATALOG-TENANT-LOCKDOWN-1] catalogId is no longer sent from
@@ -109,7 +138,18 @@ export default function CatalogPage() {
     }
   };
 
-  const meta = STATUS_META[health?.status] || STATUS_META.not_connected;
+  const status = deriveStatus(health);
+  const meta = STATUS_META[status];
+  // "Sync Now" only makes sense once the catalog is actually enabled+configured —
+  // there is no separate `connected` field from the backend, so this is derived
+  // from the same enabled+catalogId pair the backend itself gates the sync route on.
+  const connected = !!(health?.enabled && health?.catalogId);
+  // Reasons are always exactly 'missing_image' and/or 'invalid_or_zero_price' —
+  // see waCatalogHelpers.isSyncableForCatalog. No "out of stock" field exists
+  // anywhere in the schema or this gate, so it isn't shown here.
+  const skippedDetail = health?.skippedDetail || [];
+  const missingImages = skippedDetail.filter(s => s.reasons?.includes('missing_image')).length;
+  const invalidPrice   = skippedDetail.filter(s => s.reasons?.includes('invalid_or_zero_price')).length;
 
   return (
     <div className="fade-in">
@@ -134,8 +174,8 @@ export default function CatalogPage() {
       {!loading && health && (
         <InfoBanner type={meta.color === 'green' ? 'success' : meta.color === 'red' ? 'error' : meta.color === 'gray' ? 'info' : 'warning'} style={{ marginBottom: 20 }}>
           <strong>{meta.label}.</strong> {meta.desc}
-          {health.lastSyncError?.reason && (
-            <span> Last error: <code>{health.lastSyncError.reason}</code> ({fmtDate(health.lastSyncError.at)})</span>
+          {health.lastSyncError && (
+            <span> Last error: <code>{health.lastSyncError}</code></span>
           )}
         </InfoBanner>
       )}
@@ -149,14 +189,14 @@ export default function CatalogPage() {
           {/* Health stats */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
             <StatCard label="Status" value={meta.label} icon={meta.Icon} color={meta.color} plain />
-            <StatCard label="Products Live" value={String(health.products ?? 0)} icon={ShoppingBag} color="blue" />
+            <StatCard label="Products Live" value={String(health.itemsReady ?? 0)} icon={ShoppingBag} color="blue" />
             <StatCard label="Last Synced" value={fmtDate(health.lastSyncedAt)} icon={Clock} color="teal" plain />
             <StatCard
               label="Data Issues"
-              value={String((health.missingImages || 0) + (health.outOfStock || 0))}
-              sub={`${health.missingImages || 0} missing image · ${health.outOfStock || 0} out of stock`}
-              icon={health.missingImages || health.outOfStock ? ImageOff : PackageX}
-              color={(health.missingImages || health.outOfStock) ? 'amber' : 'green'}
+              value={String(health.itemsSkipped ?? 0)}
+              sub={`${missingImages} missing image · ${invalidPrice} invalid price`}
+              icon={health.itemsSkipped ? ImageOff : PackageX}
+              color={health.itemsSkipped ? 'amber' : 'green'}
             />
           </div>
 
@@ -215,10 +255,10 @@ export default function CatalogPage() {
                   Items missing a price or image are skipped automatically. Menu edits also auto-sync in the background,
                   so manual syncing is mainly useful right after a big menu update.
                 </p>
-                <Btn onClick={runSync} loading={syncing} disabled={!health.connected} fullWidth variant={health.connected ? 'primary' : 'secondary'}>
+                <Btn onClick={runSync} loading={syncing} disabled={!connected} fullWidth variant={connected ? 'primary' : 'secondary'}>
                   <RefreshCw size={14} /> Sync Now
                 </Btn>
-                {!health.connected && (
+                {!connected && (
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-ghost)', marginTop: 8, textAlign: 'center' }}>
                     {catalogId ? 'Enable the catalog above first.' : 'Ask your admin to connect a Catalog ID first.'}
                   </div>
@@ -234,8 +274,8 @@ export default function CatalogPage() {
                     </div>
                     <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0 }}>
                       Every item needs a valid price and an image to appear in your WhatsApp Catalog. Items missing either
-                      are skipped during sync — check <strong>Menu / Products</strong> to fix the {health.missingImages || 0} item(s)
-                      currently missing an image.
+                      are skipped during sync — check <strong>Menu / Products</strong> to fix the {missingImages} item(s)
+                      currently missing an image{invalidPrice ? ` and ${invalidPrice} with an invalid price` : ''}.
                     </p>
                   </div>
                 </div>

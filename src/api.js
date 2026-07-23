@@ -246,11 +246,16 @@ export const faqsApi = {
 };
 
 // ── WhatsApp Commerce Catalog — /business/:tenantId/wacatalog/* ──────────────
-// GET  /wacatalog/health → { connected, status, products, lastSyncedAt, pendingSync,
-//                             lastSyncError, missingImages, outOfStock, mode }
-//      status ladder: not_connected | never_synced | sync_pending | sync_failed
-//                      | needs_sync | healthy
-// POST /wacatalog/sync   → { ok:true, synced, deleted } or 400/502 { ok:false, reason, status }
+// [AUDIT-FIX-CATALOG-HEALTH-SHAPE] Corrected to match businessController.js
+// getWaCatalogHealth's actual response — it does not return a pre-computed
+// `status`/`connected`/`products`/`missingImages`/`outOfStock`; CatalogPage.jsx
+// now derives status/connected/data-issue counts client-side from these.
+// GET  /wacatalog/health → { enabled, catalogId, lastSyncedAt,
+//                             lastSyncError: string|null, totalItems,
+//                             itemsReady, itemsSkipped,
+//                             skippedDetail: [{ id, name, reasons }] }
+//      reasons is only ever 'missing_image' and/or 'invalid_or_zero_price'.
+// POST /wacatalog/sync   → { ok:true, synced, deleted, skippedInvalid } or 400/502 { error }
 // ⚠ Enabling the catalog (via bizApi.updateSettings) requires a catalogId AND a
 //   real (non-SIM_) connected WhatsApp number — the backend returns a clear
 //   400 message in either case, surface it directly to the tenant.
