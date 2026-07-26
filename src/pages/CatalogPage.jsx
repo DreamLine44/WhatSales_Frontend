@@ -74,7 +74,23 @@ export default function CatalogPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [h, biz] = await Promise.all([catalogApi.health(), bizApi.getSettings()]);
+      // [AUDIT-FIX-CATALOG-PHONE-STATUS-2] bizApi.getSettings() hits
+      // GET /dashboard/:tenantId/settings, which per api.js's own documented
+      // contract only ever returns { business } — never tenantStatus. The
+      // previous fix here (AUDIT-FIX-CATALOG-PHONE-STATUS-1) correctly
+      // identified that tenantStatus.whatsapp.connected is the real
+      // Meta-verified source of truth, but read it off the wrong response —
+      // biz.data?.tenantStatus was always undefined, so this silently fell
+      // through to the old phoneNumberId/SIM_ guess every single time,
+      // meaning the banner could never clear even after a successful
+      // POST /verify-whatsapp. bizApi.get() (GET /business/:tenantId) is the
+      // endpoint that actually returns tenantStatus — see WhatsAppPage.jsx,
+      // which already relies on this same call for the same field.
+      const [h, biz, tenantRes] = await Promise.all([
+        catalogApi.health(),
+        bizApi.getSettings(),
+        bizApi.get(),
+      ]);
       setHealth(h.data);
       const wa = biz.data?.business?.waCatalog || {};
       setForm({
@@ -82,8 +98,15 @@ export default function CatalogPage() {
         mode:    wa.mode || 'AI_DECIDES',
       });
       setCatalogId(wa.catalogId || '');
-      const phoneNumberId = biz.data?.business?.phoneNumberId;
-      setPhoneOk(!!phoneNumberId && !String(phoneNumberId).startsWith('SIM_'));
+      const tenantStatus = tenantRes.data?.tenantStatus;
+      if (tenantStatus) {
+        setPhoneOk(!!tenantStatus.whatsapp?.connected);
+      } else {
+        // Fallback only if tenantStatus is genuinely unavailable (e.g. an
+        // auth context where req.tenant isn't attached server-side).
+        const phoneNumberId = biz.data?.business?.phoneNumberId;
+        setPhoneOk(!!phoneNumberId && !String(phoneNumberId).startsWith('SIM_'));
+      }
     } catch (err) {
       toast.error(err.message);
     } finally {

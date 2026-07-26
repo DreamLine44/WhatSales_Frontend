@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Scissors, Plus, Trash2, Pencil, Check, X } from 'lucide-react';
+import { Scissors, Plus, Trash2, Pencil, Check, X, ToggleLeft, ToggleRight } from 'lucide-react';
 import { servicesApi, formatMoney } from '../api.js';
 import { useAuth } from '../store/AuthContext.jsx';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Input } from '../components/ui.jsx';
@@ -23,6 +23,18 @@ function ServiceRow({ service, onUpdate, onDelete, currency }) {
   });
   const [saving, setSaving]   = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [toggling, setToggling] = useState(false);
+
+  // PATCH /services/:serviceId — quick toggle, no full edit required
+  const toggleAvailable = async () => {
+    setToggling(true);
+    try {
+      const r = await servicesApi.update(service._id, { available: !service.available });
+      const updated = (r.data?.services || []).find(s => s._id === service._id) || { ...service, available: !service.available };
+      onUpdate(r.data?.services || null, updated);
+    } catch (err) { toast.error(err.message); }
+    finally { setToggling(false); }
+  };
 
   const save = async () => {
     if (!form.name?.trim()) return;
@@ -77,7 +89,14 @@ function ServiceRow({ service, onUpdate, onDelete, currency }) {
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: 2 }}>{service.name}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+              <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{service.name}</span>
+              {service.available === false && (
+                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-ghost)', background: 'var(--bg-overlay)', borderRadius: 99, padding: '1px 8px' }}>
+                  Unavailable
+                </span>
+              )}
+            </div>
             {service.description && (
               <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 4 }}>{service.description}</div>
             )}
@@ -90,7 +109,11 @@ function ServiceRow({ service, onUpdate, onDelete, currency }) {
               </span>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+            <button onClick={toggleAvailable} disabled={toggling} title={service.available === false ? 'Mark available' : 'Mark unavailable'}
+              style={{ color: service.available === false ? 'var(--text-ghost)' : 'var(--primary)', display: 'flex', cursor: 'pointer', background: 'none', border: 'none', padding: 4 }}>
+              {service.available === false ? <ToggleLeft size={20} /> : <ToggleRight size={20} />}
+            </button>
             <Btn variant="ghost" size="sm" onClick={() => setEditing(true)} title="Edit"><Pencil size={13} /></Btn>
             <Btn variant="ghost" size="sm" onClick={del} loading={deleting} style={{ color: 'var(--red)' }} title="Delete">
               <Trash2 size={13} />

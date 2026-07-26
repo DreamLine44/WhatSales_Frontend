@@ -40,16 +40,35 @@ export default function OpeningHoursPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const toggleDay = (day) => {
+  const dayMode = (day) => {
+    const d = hours.days[day];
+    if (!d) return 'default';
+    if (d.closed) return 'closed';
+    return 'custom';
+  };
+
+  const setDayMode = (day, mode) => {
     setHours(h => {
       const days = { ...h.days };
-      if (days[day]) delete days[day];
-      else days[day] = { open: h.open, close: h.close };
+      if (mode === 'default') {
+        delete days[day];
+      } else if (mode === 'closed') {
+        days[day] = { closed: true };
+      } else {
+        // 'custom' — seed with current default hours as a starting point
+        const existing = days[day];
+        days[day] = { closed: false, open: existing?.open ?? h.open, close: existing?.close ?? h.close };
+      }
       return { ...h, days };
     });
   };
 
-  const isDayActive = (day) => hours.days[day] !== undefined && hours.days[day] !== null;
+  const setDayHour = (day, key, value) => {
+    setHours(h => ({
+      ...h,
+      days: { ...h.days, [day]: { ...h.days[day], closed: false, [key]: value } },
+    }));
+  };
 
   const save = async () => {
     setSaving(true);
@@ -96,21 +115,58 @@ export default function OpeningHoursPage() {
               </div>
 
               <div>
-                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10 }}>Active Days</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>Per-Day Overrides</div>
+                <div style={{ fontSize: '0.77rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+                  Every day uses the default hours above unless you override it here — e.g. mark Sundays closed, or give Fridays a later close time.
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {DAYS.map(day => {
-                    const active = isDayActive(day);
+                    const mode = dayMode(day);
+                    const d = hours.days[day] || {};
                     return (
-                      <button key={day} onClick={() => toggleDay(day)} style={{
-                        padding: '7px 14px', borderRadius: 'var(--r-full)',
-                        border: `1.5px solid ${active ? 'var(--primary)' : 'var(--border-mid)'}`,
-                        cursor: 'pointer', fontSize: '0.815rem', fontWeight: 700,
-                        background: active ? 'var(--primary)' : 'transparent',
-                        color: active ? '#fff' : 'var(--text-muted)',
-                        transition: 'all 0.15s',
+                      <div key={day} style={{
+                        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                        padding: '9px 12px', borderRadius: 'var(--r-md)',
+                        border: '1.5px solid var(--border)',
+                        background: mode !== 'default' ? 'var(--bg-overlay)' : 'transparent',
                       }}>
-                        {DAY_LABELS[day]}
-                      </button>
+                        <span style={{ fontSize: '0.815rem', fontWeight: 700, color: 'var(--text-primary)', width: 40, flexShrink: 0 }}>
+                          {DAY_LABELS[day]}
+                        </span>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {['default', 'custom', 'closed'].map(opt => (
+                            <button key={opt} onClick={() => setDayMode(day, opt)} style={{
+                              padding: '5px 11px', borderRadius: 'var(--r-full)',
+                              border: `1.5px solid ${mode === opt ? 'var(--primary)' : 'var(--border-mid)'}`,
+                              cursor: 'pointer', fontSize: '0.73rem', fontWeight: 700,
+                              background: mode === opt ? 'var(--primary)' : 'transparent',
+                              color: mode === opt ? '#fff' : 'var(--text-muted)',
+                              transition: 'all 0.15s',
+                            }}>
+                              {opt === 'default' ? 'Default' : opt === 'custom' ? 'Custom' : 'Closed'}
+                            </button>
+                          ))}
+                        </div>
+                        {mode === 'custom' && (
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <select
+                              value={d.open ?? hours.open}
+                              onChange={e => setDayHour(day, 'open', Number(e.target.value))}
+                              style={{ fontSize: '0.77rem', padding: '4px 6px', borderRadius: 6, border: '1.5px solid var(--border-mid)', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
+                            >
+                              {HOURS.map(h => <option key={h.value} value={h.value}>{h.label}</option>)}
+                            </select>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>–</span>
+                            <select
+                              value={d.close ?? hours.close}
+                              onChange={e => setDayHour(day, 'close', Number(e.target.value))}
+                              style={{ fontSize: '0.77rem', padding: '4px 6px', borderRadius: 6, border: '1.5px solid var(--border-mid)', background: 'var(--bg-surface)', color: 'var(--text-primary)' }}
+                            >
+                              {HOURS.map(h => <option key={h.value} value={h.value}>{h.label}</option>)}
+                            </select>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
