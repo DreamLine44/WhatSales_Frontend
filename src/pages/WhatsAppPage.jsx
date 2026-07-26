@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Wifi, CheckCircle2, AlertCircle, Loader2, RefreshCw, Info, Phone } from 'lucide-react';
 import { useAuth } from '../store/AuthContext.jsx';
-import { bizApi } from '../api.js';
+import { bizApi, catalogApi } from '../api.js';
 import { PageHeader, Card, Btn, CopyField, Badge, InfoBanner } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
@@ -40,6 +40,19 @@ import toast from 'react-hot-toast';
 // AdminTenantsPage STATUS_META) and only becomes ACTIVE via a separate,
 // explicit admin action. A tenant can be genuinely connected/verified and
 // still not live. Treat both as required for "the bot is actually live".
+//
+// [FEAT-CATALOG-PROGRESS-1] A 4th step, "Catalog Connected", is appended to
+// the admin-onboarded tracker — but ONLY when this tenant has actually opted
+// into WA Catalog (waCatalog.enabled). Catalog readiness lives on a totally
+// different model (BusinessConfig, via GET /wacatalog/health) than the three
+// steps above (which are all Tenant-model fields), and it's an OPTIONAL,
+// per-tenant feature — most tenants may never enable it. Always showing a
+// 4th step would mean a permanently-incomplete checkmark for every tenant
+// who never asked for the feature, which is exactly the kind of fabricated
+// progress state this page was rewritten to stop showing (see AUDIT NOTE
+// above). So this step exists in the list at all if and only if `enabled`
+// is true; everything else about its done/active/pending state follows the
+// same real-data-only rule as the rest of this page.
 
 const REQUEST_ORDER = ['pending', 'contacted', 'connecting', 'connected'];
 const REQUEST_STEPS = [
@@ -55,9 +68,21 @@ const ADMIN_STEPS = [
   { key: 'active',      label: 'Bot Activated',          desc: 'Your AI assistant is live and responding' },
 ];
 
+// Real-state description for the catalog step — mirrors CatalogPage.jsx's own
+// derivation from the same GET /wacatalog/health payload, so this page never
+// says anything CatalogPage itself wouldn't back up.
+function catalogStepDesc(catalog) {
+  if (!catalog) return 'Checking catalog status…';
+  if (!catalog.catalogId) return 'Ask your admin to connect a Catalog ID for WhatsApp Catalog.';
+  if (catalog.lastSyncError) return `Last sync failed: ${catalog.lastSyncError}`;
+  if (!catalog.lastSyncedAt) return 'Catalog ID connected — waiting for the first sync.';
+  if (catalog.itemsSkipped > 0) return `Synced — ${catalog.itemsSkipped} item(s) skipped (missing image or invalid price).`;
+  return 'Your product catalog is synced and live on WhatsApp.';
+}
+
 // Returns { steps, completedCount } — completedCount === steps.length means
 // every step is genuinely done (terminal state, no spinner shown anywhere).
-function getProgress({ hasRequest, requestStatus, wa, isActive }) {
+function getProgress({ hasRequest, requestStatus, wa, isActive, catalog }) {
   if (hasRequest) {
     const idx = REQUEST_ORDER.indexOf(requestStatus);
     // Unknown/rejected status is handled separately by the caller — this
@@ -68,7 +93,27 @@ function getProgress({ hasRequest, requestStatus, wa, isActive }) {
   if (wa.phoneNumberId) completedCount = 1;
   if (wa.connected) completedCount = 2;
   if (wa.connected && isActive) completedCount = 3;
-  return { steps: ADMIN_STEPS, completedCount };
+
+  if (!catalog?.enabled) {
+    return { steps: ADMIN_STEPS, completedCount };
+  }
+
+  const steps = [
+    ...ADMIN_STEPS,
+    { key: 'catalog', label: 'Catalog Connected', desc: catalogStepDesc(catalog) },
+  ];
+
+  // Catalog can only be meaningfully evaluated once the bot itself is fully
+  // live (enabling it requires a real connected number — see the catalogApi
+  // comment in api.js) — but this doesn't assume that's already true. If the
+  // bot isn't yet live (completedCount < 3), the catalog step's index (3) is
+  // simply above completedCount and renders as "pending" automatically,
+  // exactly like any other not-yet-reached step.
+  if (completedCount >= 3) {
+    const catalogDone = !!catalog.catalogId && !!catalog.lastSyncedAt && !catalog.lastSyncError;
+    completedCount = catalogDone ? 4 : 3;
+  }
+  return { steps, completedCount };
 }
 
 function StepItem({ step, status, isLast }) {
@@ -121,6 +166,12 @@ export default function WhatsAppPage() {
   // here just means this tenant never submitted a self-service request (the
   // normal case for admin-onboarded tenants) — not an error.
   const [requestStatus, setRequestStatus] = useState(null);
+  // [FEAT-CATALOG-PROGRESS-1] GET /wacatalog/health — same endpoint
+  // CatalogPage.jsx uses. A failure here (e.g. no BusinessConfig yet) just
+  // means "treat catalog as not enabled" for this tracker — never blocks or
+  // errors the rest of the page, since catalog is optional and this is only
+  // used to decide whether to show one extra step.
+  const [catalogHealth, setCatalogHealth] = useState(null);
 
   useEffect(() => {
     bizApi.get()
@@ -133,6 +184,9 @@ export default function WhatsAppPage() {
     bizApi.connectionRequestStatus()
       .then(r => setRequestStatus(r.data?.status || r.data?.request?.status || null))
       .catch(() => setRequestStatus(null));
+    catalogApi.health()
+      .then(r => setCatalogHealth(r.data || null))
+      .catch(() => setCatalogHealth(null));
   }, []);
 
   // Prefer the live tenantStatus fetch (authoritative, real Tenant fields)
@@ -161,7 +215,7 @@ export default function WhatsAppPage() {
   const hasRequest = requestStatus != null;
   const isRejected = requestStatus === 'rejected';
 
-  const { steps, completedCount } = getProgress({ hasRequest, requestStatus, wa, isActive });
+  const { steps, completedCount } = getProgress({ hasRequest, requestStatus, wa, isActive, catalog: catalogHealth });
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -174,6 +228,9 @@ export default function WhatsAppPage() {
       bizApi.connectionRequestStatus()
         .then(rr => setRequestStatus(rr.data?.status || rr.data?.request?.status || null))
         .catch(() => setRequestStatus(null));
+      catalogApi.health()
+        .then(rr => setCatalogHealth(rr.data || null))
+        .catch(() => setCatalogHealth(null));
       toast.success('Status refreshed');
     } catch (err) {
       toast.error(err.message || 'Failed to refresh');

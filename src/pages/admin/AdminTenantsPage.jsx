@@ -602,6 +602,39 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
       const r = await adminApi.updateTenant(tenant._id, body);
       const serverWA   = r.data?.tenant?.whatsapp || {};
       const serverMeta = r.data?.tenant?.meta || {};
+
+      // [FIX-CATALOGID-VERIFY-1] The backend now echoes back
+      // `business.waCatalog` whenever a catalogId write was attempted
+      // (tenantController.js updateTenant, [FIX-CATALOGID-BUSINESSCONFIG-SYNC]).
+      // Previously this function trusted the bare 200 and showed "saved"
+      // unconditionally — which is exactly how a silently-dropped catalogId
+      // went unnoticed before: the request "succeeded" while nothing was
+      // actually written. Now, if a catalogId was submitted, its presence is
+      // confirmed against what the server actually persisted before telling
+      // the admin it saved.
+      const submittedCatalogId = form.waCatalog.catalogId.trim();
+      const confirmedCatalogId = r.data?.business?.waCatalog?.catalogId || '';
+      const catalogIdMismatch  = !!submittedCatalogId && confirmedCatalogId !== submittedCatalogId;
+
+      if (catalogIdMismatch) {
+        toast.error(
+          'WhatsApp credentials saved, but the Catalog ID was NOT confirmed by the server — ' +
+          'it may not have been saved. Reload and check before relying on it.',
+          { duration: 8000 },
+        );
+      }
+      if (confirmedCatalogId) {
+        setForm(f => ({ ...f, waCatalog: { ...f.waCatalog, catalogId: confirmedCatalogId } }));
+      }
+
+      // [FIX-SILENT-DROP-1] Surface any fields the backend didn't recognize
+      // (typo, wrong nesting, or a field not yet wired up server-side) —
+      // previously these vanished with no signal at all, identical to how
+      // the catalogId bug went unnoticed for so long.
+      if (r.data?.ignored?.length) {
+        toast.error(`Some fields were not saved (not recognized by the server): ${r.data.ignored.join(', ')}`, { duration: 8000 });
+      }
+
       // [FIX-EDIT-6] Merge WhatsApp update using functional updater pattern inside applyUpdate.
       // applyUpdate now uses setTenant(prev => ...) so `prev.whatsapp` is always fresh —
       // this avoids the stale-closure bug where tenant.whatsapp captured at render time
@@ -623,7 +656,13 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
           appSecret: undefined,  // never cache the plaintext secret in state
         },
       }));
-      toast.success('WhatsApp credentials saved');
+
+      // Only claim success for the parts that were actually confirmed —
+      // a catalogId mismatch already got its own explicit error above, so
+      // this shouldn't also claim an unqualified "saved".
+      if (!catalogIdMismatch) {
+        toast.success('WhatsApp credentials saved');
+      }
       // Clear secret fields to prevent accidental re-submission
       setWA('accessToken', '');
       setWA('webhookSecret', '');
