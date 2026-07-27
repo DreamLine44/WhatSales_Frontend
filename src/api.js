@@ -251,10 +251,15 @@ export const faqsApi = {
 // `status`/`connected`/`products`/`missingImages`/`outOfStock`; CatalogPage.jsx
 // now derives status/connected/data-issue counts client-side from these.
 // GET  /wacatalog/health → { enabled, catalogId, lastSyncedAt,
-//                             lastSyncError: string|null, totalItems,
-//                             itemsReady, itemsSkipped,
+//                             lastSyncError: string|null, pendingVerification,
+//                             totalItems, itemsReady, itemsSkipped,
 //                             skippedDetail: [{ id, name, reasons }] }
 //      reasons is only ever 'missing_image' and/or 'invalid_or_zero_price'.
+//      pendingVerification is a count of items_batch handles Meta hasn't
+//      finished processing yet (see waCatalogService.js
+//      CATALOG-ASYNC-VERIFY-1) — a nonzero value means some just-synced
+//      items may not be visible to customers yet even though the sync
+//      itself reported success.
 // POST /wacatalog/sync   → { ok:true, synced, deleted, skippedInvalid } or 400/502 { error }
 // ⚠ Enabling the catalog (via bizApi.updateSettings) requires a catalogId AND a
 //   real (non-SIM_) connected WhatsApp number — the backend returns a clear

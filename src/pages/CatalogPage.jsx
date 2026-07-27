@@ -32,6 +32,15 @@ const STATUS_META = {
   never_synced:  { label: 'Never Synced',  color: 'amber', Icon: Clock,       desc: 'Catalog is configured but has never been synced to Meta yet.' },
   sync_failed:   { label: 'Sync Failed',   color: 'red',   Icon: AlertCircle, desc: 'The last sync attempt failed — see the error below.' },
   needs_sync:    { label: 'Needs Sync',    color: 'amber', Icon: AlertCircle, desc: "It's been over 24 hours since the last successful sync." },
+  // [FIX-CATALOG-PENDING-VERIFY-1] Meta's items_batch API is async — a 200
+  // response only means a batch was ACCEPTED, not that those items are
+  // confirmed live yet (see waCatalogService.js CATALOG-ASYNC-VERIFY-1).
+  // Previously any pending handle was invisible here: as long as
+  // lastSyncError was empty and lastSyncedAt was recent, the page showed a
+  // flat "Healthy" even while some (or all) just-synced items were still
+  // being processed by Meta and not actually visible to customers yet. This
+  // state surfaces that window honestly instead of over-promising.
+  verifying:     { label: 'Verifying',     color: 'amber', Icon: Clock,       desc: "Meta is still processing your last sync — some items may not be visible to customers yet. This usually clears within a few minutes; re-sync to check." },
   healthy:       { label: 'Healthy',       color: 'green', Icon: CheckCircle2, desc: 'Your catalog is up to date with Meta.' },
 };
 
@@ -53,6 +62,7 @@ function deriveStatus(h) {
   if (h.lastSyncError) return 'sync_failed';
   if (!h.lastSyncedAt) return 'never_synced';
   if (Date.now() - new Date(h.lastSyncedAt).getTime() > DAY_MS) return 'needs_sync';
+  if ((h.pendingVerification || 0) > 0) return 'verifying';
   return 'healthy';
 }
 
@@ -199,6 +209,9 @@ export default function CatalogPage() {
           <strong>{meta.label}.</strong> {meta.desc}
           {health.lastSyncError && (
             <span> Last error: <code>{health.lastSyncError}</code></span>
+          )}
+          {status !== 'verifying' && (health.pendingVerification || 0) > 0 && (
+            <span> ({health.pendingVerification} item{health.pendingVerification > 1 ? 's' : ''} still being verified by Meta.)</span>
           )}
         </InfoBanner>
       )}
