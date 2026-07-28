@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { UtensilsCrossed, Plus, Trash2, Pencil, Check, X, ToggleLeft, ToggleRight, Image as ImageIcon, Upload, ChevronDown, ChevronUp } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { UtensilsCrossed, Plus, Trash2, Pencil, Check, X, ToggleLeft, ToggleRight, Image as ImageIcon, Upload, ChevronDown, ChevronUp, ClipboardList, AlertTriangle, Loader2 } from 'lucide-react';
 import { menuApi, bizApi, formatMoney } from '../api.js';
 import { useAuth } from '../store/AuthContext.jsx';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Input, Toggle } from '../components/ui.jsx';
@@ -24,6 +24,42 @@ import toast from 'react-hot-toast';
 // Comma-separated string ⇄ array helpers for tags/variants text inputs.
 const toCsv   = (arr) => (arr || []).map(v => (typeof v === 'string' ? v : v?.name || '')).filter(Boolean).join(', ');
 const fromCsv = (str) => str.split(',').map(s => s.trim()).filter(Boolean);
+
+// [BULK-ADD-1] Parses a pasted, multi-line block of text into menu-item rows.
+// Format is one item per line: "Name, Price, Description (optional)".
+// Only the first comma splits name/price — everything after the second
+// comma is treated as the description, so descriptions may contain commas
+// of their own (e.g. "Jollof Rice, 150, Rice with tomato, onion, and spice").
+// Blank lines and lines starting with # (comments) are ignored.
+const BULK_EXAMPLE = `Jollof Rice, 150, Savoury rice cooked in tomato sauce
+Benachin (Chicken), 175, Jollof-style rice with chicken
+Grilled Fish, 200
+Bissap Juice, 50, Hibiscus drink, served chilled`;
+
+function parseBulkMenuText(text) {
+  const lines = (text || '').split('\n');
+  const rows = [];
+  lines.forEach((raw, idx) => {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) return;
+    const parts = line.split(',');
+    const name = (parts[0] || '').trim();
+    const priceRaw = (parts[1] || '').trim();
+    const description = parts.slice(2).join(',').trim();
+    const errors = [];
+    if (!name) errors.push('Missing item name');
+    let price = 0;
+    if (priceRaw === '') {
+      // price optional — defaults to 0, same as the single-item form
+    } else if (Number.isNaN(Number(priceRaw))) {
+      errors.push(`Price "${priceRaw}" isn't a number`);
+    } else {
+      price = Number(priceRaw);
+    }
+    rows.push({ line: idx + 1, raw: line, name, price, priceRaw, description, errors });
+  });
+  return rows;
+}
 
 function AdvancedFields({ form, setForm }) {
   return (
@@ -54,6 +90,132 @@ function AdvancedFields({ form, setForm }) {
         label="Show image when item is selected"
         hint="Turn off to keep responses text-only for this item"
       />
+    </div>
+  );
+}
+
+function BulkAddForm({ currency, onAdded, onCancel }) {
+  const [text, setText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [progress, setProgress] = useState(null); // { done, total }
+
+  const rows = useMemo(() => parseBulkMenuText(text), [text]);
+  const validRows = rows.filter(r => r.errors.length === 0);
+  const invalidRows = rows.filter(r => r.errors.length > 0);
+
+  const submit = async () => {
+    if (validRows.length === 0) { toast.error('Add at least one valid line first'); return; }
+    setSubmitting(true);
+    setProgress({ done: 0, total: validRows.length });
+    let latestMenuItems = null;
+    let failed = [];
+    // Sequential, not parallel: reuses the existing single-item POST /menu
+    // endpoint (no backend changes needed) and avoids hammering the API
+    // with dozens of simultaneous requests for a large paste.
+    for (let i = 0; i < validRows.length; i++) {
+      const row = validRows[i];
+      try {
+        const r = await menuApi.add({
+          name: row.name,
+          price: row.price,
+          description: row.description || '',
+        });
+        latestMenuItems = r.data?.menuItems || latestMenuItems;
+      } catch (err) {
+        failed.push({ ...row, error: err.message });
+      }
+      setProgress({ done: i + 1, total: validRows.length });
+    }
+    setSubmitting(false);
+    const succeeded = validRows.length - failed.length;
+    if (succeeded > 0) {
+      toast.success(`${succeeded} item${succeeded !== 1 ? 's' : ''} added`);
+    }
+    if (failed.length > 0) {
+      toast.error(`${failed.length} item${failed.length !== 1 ? 's' : ''} failed: ${failed.map(f => f.name).join(', ')}`);
+    }
+    if (latestMenuItems) onAdded(latestMenuItems);
+    if (failed.length === 0) {
+      setText('');
+    } else {
+      // Leave only the failed lines in the box so the tenant can fix & retry.
+      setText(failed.map(f => f.raw).join('\n'));
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+        Paste one item per line: <strong>Name, Price, Description (optional)</strong>. Arrange your list in Notes,
+        Excel, or a Word doc first, then copy and paste it here.
+      </div>
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        placeholder={BULK_EXAMPLE}
+        rows={8}
+        style={{
+          width: '100%', resize: 'vertical', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.82rem',
+          padding: '10px 12px', borderRadius: 'var(--r-md)', border: '1.5px solid var(--border)',
+          background: 'var(--bg-overlay)', color: 'var(--text-main, inherit)',
+        }}
+      />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <button
+          type="button"
+          onClick={() => setText(BULK_EXAMPLE)}
+          style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+        >
+          Insert example
+        </button>
+        {rows.length > 0 && (
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', gap: 10 }}>
+            <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{validRows.length} ready</span>
+            {invalidRows.length > 0 && (
+              <span style={{ color: 'var(--red)', fontWeight: 700 }}>{invalidRows.length} need fixing</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {invalidRows.length > 0 && (
+        <div style={{
+          background: 'var(--red-dim, rgba(220,38,38,0.08))', border: '1.5px solid rgba(220,38,38,0.22)',
+          borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: '0.78rem', color: 'var(--red)',
+          display: 'flex', flexDirection: 'column', gap: 3,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
+            <AlertTriangle size={13} /> Fix these lines before adding:
+          </div>
+          {invalidRows.map(r => (
+            <div key={r.line}>Line {r.line}: {r.errors.join('; ')} — "{r.raw}"</div>
+          ))}
+        </div>
+      )}
+
+      {validRows.length > 0 && (
+        <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+          {validRows.map((r, i) => (
+            <div key={i} style={{
+              display: 'flex', justifyContent: 'space-between', gap: 10, padding: '6px 12px',
+              fontSize: '0.78rem', borderBottom: i < validRows.length - 1 ? '1px solid var(--border)' : 'none',
+            }}>
+              <span style={{ fontWeight: 600 }}>{r.name}</span>
+              <span style={{ color: 'var(--text-muted)', flex: 1 }}>{r.description}</span>
+              <span style={{ fontWeight: 700, color: 'var(--primary)' }}>{formatMoney(r.price, currency, 2)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <Btn onClick={submit} loading={submitting} disabled={validRows.length === 0}>
+          {submitting
+            ? <>Adding {progress?.done}/{progress?.total}…</>
+            : <><Check size={14} /> Add {validRows.length || ''} Item{validRows.length !== 1 ? 's' : ''}</>}
+        </Btn>
+        <Btn variant="ghost" onClick={onCancel} disabled={submitting}>Cancel</Btn>
+      </div>
     </div>
   );
 }
@@ -280,6 +442,7 @@ export default function MenuPage() {
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [adding, setAdding]       = useState(false);
+  const [addMode, setAddMode]     = useState('single'); // 'single' | 'bulk'
   const [form, setForm] = useState({
     name: '', price: '', description: '',
     category: '', stockCount: '', currency: '', duration: '', prep: '',
@@ -390,7 +553,39 @@ export default function MenuPage() {
 
       {adding && (
         <Card style={{ marginBottom: 16, borderColor: 'var(--border-accent)' }}>
-          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.9rem', marginBottom: 14 }}>New Menu Item</h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.9rem', margin: 0 }}>
+              {addMode === 'single' ? 'New Menu Item' : 'Add Multiple Items'}
+            </h3>
+            <div style={{ display: 'flex', gap: 4, background: 'var(--bg-overlay)', borderRadius: 'var(--r-md)', padding: 3 }}>
+              <button type="button" onClick={() => setAddMode('single')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 'var(--r-sm, 6px)',
+                  border: 'none', cursor: 'pointer', fontSize: '0.76rem', fontWeight: 700,
+                  background: addMode === 'single' ? 'var(--bg-surface)' : 'transparent',
+                  color: addMode === 'single' ? 'var(--primary)' : 'var(--text-muted)',
+                }}>
+                <Plus size={12} /> Single Item
+              </button>
+              <button type="button" onClick={() => setAddMode('bulk')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 'var(--r-sm, 6px)',
+                  border: 'none', cursor: 'pointer', fontSize: '0.76rem', fontWeight: 700,
+                  background: addMode === 'bulk' ? 'var(--bg-surface)' : 'transparent',
+                  color: addMode === 'bulk' ? 'var(--primary)' : 'var(--text-muted)',
+                }}>
+                <ClipboardList size={12} /> Add Multiple
+              </button>
+            </div>
+          </div>
+
+          {addMode === 'bulk' ? (
+            <BulkAddForm
+              currency={user?.currency}
+              onAdded={(newList) => { setMenuItems(newList); }}
+              onCancel={() => setAdding(false)}
+            />
+          ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
               <Input label="Item name *" value={form.name}
@@ -449,6 +644,7 @@ export default function MenuPage() {
               <Btn variant="ghost" onClick={() => { clearNewImage(); setAdding(false); }}>Cancel</Btn>
             </div>
           </div>
+          )}
         </Card>
       )}
 

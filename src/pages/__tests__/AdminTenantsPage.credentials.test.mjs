@@ -41,8 +41,13 @@ function slice(startMarker, endMarker) {
 const createSubmitBody = () =>
   slice('const submit = async () => {', 'const selectedMode = SUPPORTED_MODES.find');
 
-const createStep2Jsx = () =>
-  slice('{/* Step 2 */}', '{/* Step 3');
+// [AUDIT-FIX-STEP-SPLIT-1] businessId/catalogId moved from Step 2 to a new
+// Step 3 when the create wizard was split into 3 input steps (was 2) — the
+// old step 2 crammed WhatsApp core creds + Meta/catalog extras onto one
+// screen. Marker text and range updated to match; this is a real move, not
+// just a rename, so the tests below now check Step 3, not Step 2.
+const createStep3Jsx = () =>
+  slice('{/* Step 3 — Meta app & catalog extras */}', '{/* Step 4');
 
 const editSaveWABody = () =>
   slice('const saveWA = async () => {', 'const verifyWA = async () => {');
@@ -85,16 +90,16 @@ test('Create modal: catalogId is sent under waCatalog only when non-blank (same 
   );
 });
 
-test('Create modal JSX (Step 2): renders a Meta Business ID input wired to setMeta(\'businessId\', ...)', () => {
-  const step2 = createStep2Jsx();
-  assert.match(step2, /Meta Business ID \(optional\)/);
-  assert.match(step2, /setMeta\('businessId', e\.target\.value\)/);
+test('Create modal JSX (Step 3): renders a Meta Business ID input wired to setMeta(\'businessId\', ...)', () => {
+  const step3 = createStep3Jsx();
+  assert.match(step3, /Meta Business ID \(optional\)/);
+  assert.match(step3, /setMeta\('businessId', e\.target\.value\)/);
 });
 
-test('Create modal JSX (Step 2): renders a WhatsApp Catalog ID input — catalogId is no longer Edit-only', () => {
-  const step2 = createStep2Jsx();
-  assert.match(step2, /WhatsApp Catalog ID \(optional\)/);
-  assert.match(step2, /setCatalog\('catalogId', e\.target\.value\)/);
+test('Create modal JSX (Step 3): renders a WhatsApp Catalog ID input — catalogId is no longer Edit-only', () => {
+  const step3 = createStep3Jsx();
+  assert.match(step3, /WhatsApp Catalog ID \(optional\)/);
+  assert.match(step3, /setCatalog\('catalogId', e\.target\.value\)/);
 });
 
 // ── Edit modal: businessId ──────────────────────────────────────────────────
