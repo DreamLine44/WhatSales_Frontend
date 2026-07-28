@@ -30,6 +30,19 @@ const STATUS_META = {
 // longer hardcodes the list, so a mode added on the backend shows up here
 // without a frontend redeploy (Appendix B bug #9).
 
+// ── Inline field error ─────────────────────────────────────────────────────────
+// [CRED-VALIDATION-1] Same pattern as WhatsAppConnectionPage.jsx's FieldError —
+// not exported from there, so mirrored here rather than inventing a new style.
+function FieldError({ msg }) {
+  if (!msg) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: '0.76rem', color: 'var(--red)' }}>
+      <AlertTriangle size={11} />
+      {msg}
+    </div>
+  );
+}
+
 // ── Tiny copy button ──────────────────────────────────────────────────────────
 function CopyBtn({ value, label }) {
   const [copied, setCopied] = useState(false);
@@ -123,14 +136,23 @@ function CreateTenantModal({ onClose, onCreate }) {
     // entry). createTenant itself doesn't currently accept meta.* at all, so
     // appSecret can only be set afterwards via the Edit modal — this create
     // form collects appId only (harmless, unencrypted) and explains that.
-    meta: { appId: '' },
+    // businessId (Meta Business Manager ID) lives alongside appId on this same
+    // `meta` object and gets the same "not sensitive, safe to collect here" treatment.
+    meta: { appId: '', businessId: '' },
+    // [CRED-MODEL-8FIELD-1] catalogId used to be Edit-only, forcing a second
+    // step for every new tenant — see [AUDIT-FIX-CATALOG-TENANT-LOCKDOWN-1] for
+    // why it's admin-only (never tenant-editable), which is unaffected by
+    // *which* admin form collects it. Same shape the Edit modal already uses.
+    waCatalog: { catalogId: '' },
   });
   const [saving, setSaving] = useState(false);
   const [created, setCreated] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const set     = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const setWA   = (k, v) => setForm(f => ({ ...f, whatsapp: { ...f.whatsapp, [k]: v } }));
   const setMeta = (k, v) => setForm(f => ({ ...f, meta: { ...f.meta, [k]: v } }));
+  const setCatalog = (k, v) => setForm(f => ({ ...f, waCatalog: { ...f.waCatalog, [k]: v } }));
 
   const submit = async () => {
     if (!form.name.trim()) { toast.error('Business name is required'); return; }
@@ -157,8 +179,19 @@ function CreateTenantModal({ onClose, onCreate }) {
           webhookSecret: form.whatsapp.webhookSecret.trim() || undefined,
         };
       }
-      if (form.meta.appId.trim()) {
-        payload.meta = { appId: form.meta.appId.trim() };
+      // [CRED-MODEL-8FIELD-1] Same "omit the key if blank" pattern as whatsapp
+      // above — build the meta object incrementally so a blank businessId
+      // doesn't send an empty string that could overwrite a real value later.
+      const metaPayload = {};
+      if (form.meta.appId.trim())     metaPayload.appId     = form.meta.appId.trim();
+      if (form.meta.businessId.trim()) metaPayload.businessId = form.meta.businessId.trim();
+      if (Object.keys(metaPayload).length) payload.meta = metaPayload;
+
+      // catalogId is admin-only (see [AUDIT-FIX-CATALOG-TENANT-LOCKDOWN-1]) but
+      // there's no reason it can't be set at creation time instead of forcing a
+      // second Edit step — only sent if a value was actually entered.
+      if (form.waCatalog.catalogId.trim()) {
+        payload.waCatalog = { catalogId: form.waCatalog.catalogId.trim() };
       }
 
       const r = await adminApi.createTenant(payload);
@@ -186,7 +219,7 @@ function CreateTenantModal({ onClose, onCreate }) {
           verifyToken:   form.whatsapp.verifyToken.trim()  || undefined,
           connected:     false,
         } : {},
-        meta: form.meta.appId.trim() ? { appId: form.meta.appId.trim() } : undefined,
+        meta: Object.keys(metaPayload).length ? { ...metaPayload } : undefined,
       };
 
       setCreated({ tenant: richTenant, apiKey, formWhatsapp: form.whatsapp });
@@ -194,6 +227,13 @@ function CreateTenantModal({ onClose, onCreate }) {
       toast.success(`Tenant "${form.name.trim()}" created`);
       setStep(3);
     } catch (err) {
+      // [CRED-VALIDATION-1] Surface the backend's per-field validation errors
+      // inline, same pattern as WhatsAppConnectionPage.jsx's fieldErrors.
+      const perField = err.response?.data?.lastValidationError;
+      if (perField && typeof perField === 'object') {
+        setFieldErrors(perField);
+        setStep(2);
+      }
       toast.error(err.message);
     } finally {
       setSaving(false);
@@ -278,13 +318,22 @@ function CreateTenantModal({ onClose, onCreate }) {
           </div>
           <Input label="Phone Number ID" value={form.whatsapp.phoneNumberId}
             onChange={e => setWA('phoneNumberId', e.target.value)} placeholder="From Meta Business Manager" />
+          <FieldError msg={fieldErrors.phoneNumberId} />
           <Input label="WhatsApp Business Account ID (optional)" value={form.whatsapp.wabaId}
             onChange={e => setWA('wabaId', e.target.value)} placeholder="From Meta Business Manager" />
+          <FieldError msg={fieldErrors.wabaId} />
           <Input label="Access Token" value={form.whatsapp.accessToken}
             onChange={e => setWA('accessToken', e.target.value)} placeholder="EAAxxxxxxxx..." type="password" />
+          <FieldError msg={fieldErrors.accessToken} />
           <Input label="Verify Token" value={form.whatsapp.verifyToken}
             onChange={e => setWA('verifyToken', e.target.value)} placeholder="A random secret string" />
+          <FieldError msg={fieldErrors.verifyToken} />
           {/* [FIX-CREATE-4] Added webhookSecret field that was missing */}
+          {/* [CRED-MODEL-8FIELD-1] Left in place for now — the backend prompt's
+              renaming note ("Webhook Secret" → "Meta App Secret") says this and
+              meta.appSecret should collapse into one field, but that can't be
+              removed here until tenantController.js's ALLOWED list is confirmed
+              to have actually dropped whatsapp.webhookSecret. */}
           <Input label="Webhook Secret (optional)" value={form.whatsapp.webhookSecret}
             onChange={e => setWA('webhookSecret', e.target.value)} placeholder="Secret for webhook signature verification" />
           {/* [FIX-META-PLACEMENT] App ID lives on tenant.meta.appId, a sibling of
@@ -294,15 +343,28 @@ function CreateTenantModal({ onClose, onCreate }) {
               afterwards from the Edit modal's WhatsApp tab. */}
           <Input label="Meta App ID (optional)" value={form.meta.appId}
             onChange={e => setMeta('appId', e.target.value)} placeholder="From Meta App Dashboard → Settings → Basic" />
+          <FieldError msg={fieldErrors.appId} />
+          {/* [CRED-MODEL-8FIELD-1] businessId (Meta Business Manager ID) — same
+              "not sensitive, safe to show" treatment as appId, unlike appSecret. */}
+          <Input label="Meta Business ID (optional)" value={form.meta.businessId}
+            onChange={e => setMeta('businessId', e.target.value)} placeholder="From Meta Business Manager → Business Settings" />
+          <FieldError msg={fieldErrors.businessId} />
+          {/* [CRED-MODEL-8FIELD-1] catalogId is no longer Edit-only — see
+              [AUDIT-FIX-CATALOG-TENANT-LOCKDOWN-1] for why it stays admin-only
+              (never tenant-editable); that's about *who* can set it, not which
+              admin form it appears on. Placed near appId/businessId since all
+              three are typically copied from the same Meta screens at once. */}
+          <Input label="WhatsApp Catalog ID (optional)" value={form.waCatalog.catalogId}
+            onChange={e => setCatalog('catalogId', e.target.value)} placeholder="From Meta Commerce Manager → Catalog → Settings" />
+          <FieldError msg={fieldErrors.catalogId} />
           <Input label="WhatsApp Phone Number" value={form.whatsapp.phone}
             onChange={e => setWA('phone', e.target.value)} placeholder="+220 xxx xxxx" />
           <div style={{
             background: 'var(--bg-overlay)', borderRadius: 'var(--r-md)',
             padding: '9px 12px', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5,
           }}>
-            App Secret and WhatsApp Catalog setup can be added afterwards — App Secret from
-            this tenant's Edit panel, and the Catalog ID from the tenant's own Menu page once
-            WhatsApp is connected.
+            App Secret can be added afterwards from this tenant's Edit panel — it isn't
+            collected here since creation doesn't accept it yet.
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
@@ -342,6 +404,9 @@ function CreateTenantModal({ onClose, onCreate }) {
           )}
           {created.tenant.whatsapp?.wabaId && (
             <CopyField label="WhatsApp Business Account ID" value={created.tenant.whatsapp.wabaId} />
+          )}
+          {created.tenant.meta?.businessId && (
+            <CopyField label="Meta Business ID" value={created.tenant.meta.businessId} />
           )}
           <p style={{ fontSize: '0.77rem', color: 'var(--text-muted)', marginTop: 10, lineHeight: 1.5 }}>
             Status starts as <strong>PENDING</strong>. Open Edit → Status tab to activate this tenant.
@@ -460,8 +525,11 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
     // entry. appSecret is never pre-filled (encrypted at rest, stripped from
     // every server response); appId is not sensitive and is safe to show.
     meta: {
-      appId:     initialTenant.meta?.appId || '',
-      appSecret: '',
+      appId:      initialTenant.meta?.appId      || '',
+      // [CRED-MODEL-8FIELD-1] businessId is not sensitive (unlike appSecret),
+      // so it pre-fills from the tenant record exactly like appId does.
+      businessId: initialTenant.meta?.businessId || '',
+      appSecret:  '',
     },
     // [AUDIT-FIX-CATALOG-ADMIN-1] Not present on `initialTenant` — the tenant
     // list endpoint only returns businessMode, not the full BusinessConfig
@@ -473,11 +541,14 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
   const [statusSaving, setStatusSaving] = useState(false);
   const [verifying, setVerifying]       = useState(false);
   const [showRegenKey, setShowRegenKey] = useState(false);
+  // [CRED-VALIDATION-1] Inline per-field errors, same pattern as WhatsAppConnectionPage.jsx
+  const [fieldErrors, setFieldErrors]   = useState({});
 
-  const set     = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const setWA   = (k, v) => setForm(f => ({ ...f, whatsapp: { ...f.whatsapp, [k]: v } }));
-  const setMeta = (k, v) => setForm(f => ({ ...f, meta: { ...f.meta, [k]: v } }));
-  const setCatalog = (k, v) => setForm(f => ({ ...f, waCatalog: { ...f.waCatalog, [k]: v } }));
+  const clearErr = (k) => { if (fieldErrors[k]) setFieldErrors(e => ({ ...e, [k]: '' })); };
+  const set     = (k, v) => { setForm(f => ({ ...f, [k]: v })); clearErr(k); };
+  const setWA   = (k, v) => { setForm(f => ({ ...f, whatsapp: { ...f.whatsapp, [k]: v } })); clearErr(k); };
+  const setMeta = (k, v) => { setForm(f => ({ ...f, meta: { ...f.meta, [k]: v } })); clearErr(k); };
+  const setCatalog = (k, v) => { setForm(f => ({ ...f, waCatalog: { ...f.waCatalog, [k]: v } })); clearErr(k); };
 
   // [AUDIT-FIX-CATALOG-ADMIN-1] Fetch the tenant's current catalogId on mount —
   // it lives on BusinessConfig, which the list view this modal was opened from
@@ -584,8 +655,9 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
       // key so it lands on updateTenant's 'meta.appId'/'meta.appSecret' allowlist
       // entries instead of being silently dropped as an unrecognised whatsapp.* field.
       const metaPayload = { ...form.meta };
-      if (!metaPayload.appId)     delete metaPayload.appId;
-      if (!metaPayload.appSecret) delete metaPayload.appSecret;
+      if (!metaPayload.appId)      delete metaPayload.appId;
+      if (!metaPayload.businessId) delete metaPayload.businessId;
+      if (!metaPayload.appSecret)  delete metaPayload.appSecret;
 
       const body = { whatsapp: waPayload };
       if (Object.keys(metaPayload).length) body.meta = metaPayload;
@@ -627,6 +699,32 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
         setForm(f => ({ ...f, waCatalog: { ...f.waCatalog, catalogId: confirmedCatalogId } }));
       }
 
+      // [CRED-VALIDATION-1] Same submitted-vs-confirmed mismatch check as
+      // catalogId above, extended to businessId and wabaId — these are exactly
+      // the fields where an ID mix-up (like the WABA-ID-as-Catalog-ID bug this
+      // whole credential model stems from) would otherwise go silently unnoticed.
+      const submittedBusinessId = (metaPayload.businessId || '').trim();
+      const confirmedBusinessId = serverMeta.businessId || '';
+      const businessIdMismatch  = !!submittedBusinessId && confirmedBusinessId !== submittedBusinessId;
+      if (businessIdMismatch) {
+        toast.error(
+          'WhatsApp credentials saved, but the Meta Business ID was NOT confirmed by the server — ' +
+          'it may not have been saved. Reload and check before relying on it.',
+          { duration: 8000 },
+        );
+      }
+
+      const submittedWabaId = (waPayload.wabaId || '').trim();
+      const confirmedWabaId = serverWA.wabaId || '';
+      const wabaIdMismatch  = !!submittedWabaId && confirmedWabaId !== submittedWabaId;
+      if (wabaIdMismatch) {
+        toast.error(
+          'WhatsApp credentials saved, but the WhatsApp Business Account ID was NOT confirmed ' +
+          'by the server — it may not have been saved. Reload and check before relying on it.',
+          { duration: 8000 },
+        );
+      }
+
       // [FIX-SILENT-DROP-1] Surface any fields the backend didn't recognize
       // (typo, wrong nesting, or a field not yet wired up server-side) —
       // previously these vanished with no signal at all, identical to how
@@ -657,10 +755,10 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
         },
       }));
 
-      // Only claim success for the parts that were actually confirmed —
-      // a catalogId mismatch already got its own explicit error above, so
-      // this shouldn't also claim an unqualified "saved".
-      if (!catalogIdMismatch) {
+      // Only claim success for the parts that were actually confirmed — a
+      // catalogId/businessId/wabaId mismatch already got its own explicit
+      // error above, so this shouldn't also claim an unqualified "saved".
+      if (!catalogIdMismatch && !businessIdMismatch && !wabaIdMismatch) {
         toast.success('WhatsApp credentials saved');
       }
       // Clear secret fields to prevent accidental re-submission
@@ -672,6 +770,9 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
       // to call Meta's API and advance onboardingStep to 3 before activating the tenant.
       toast('Credentials saved. Use "Verify WhatsApp" to confirm credentials with Meta before activating.', { icon: 'ℹ️', duration: 5000 });
     } catch (err) {
+      // [CRED-VALIDATION-1] Surface the backend's per-field validation errors inline.
+      const perField = err.response?.data?.lastValidationError;
+      if (perField && typeof perField === 'object') setFieldErrors(perField);
       toast.error(err.message);
     } finally {
       setSaving(false);
@@ -879,20 +980,28 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
             <div>
               <Input label="Phone Number ID" value={form.whatsapp.phoneNumberId}
                 onChange={e => setWA('phoneNumberId', e.target.value)} placeholder="e.g. 123456789012345" />
+              <FieldError msg={fieldErrors.phoneNumberId} />
               <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
                 ⚠️ Must be the <strong>Phone Number ID</strong> — a long numeric ID from Meta for Developers → WhatsApp → API Setup → "Phone number ID" field. Do NOT use the WABA ID, App ID, or phone number itself.
               </p>
             </div>
             <Input label="WhatsApp Business Account ID (optional)" value={form.whatsapp.wabaId}
               onChange={e => setWA('wabaId', e.target.value)} placeholder="From Meta Business Manager" />
+            <FieldError msg={fieldErrors.wabaId} />
             <Input
               label={`Access Token${tenant.whatsapp?.phoneNumberId ? ' (leave blank to keep existing)' : ''}`}
               value={form.whatsapp.accessToken}
               onChange={e => setWA('accessToken', e.target.value)}
               type="password" placeholder="EAAxxxxxxxx..." />
+            <FieldError msg={fieldErrors.accessToken} />
             <Input label="Verify Token" value={form.whatsapp.verifyToken}
               onChange={e => setWA('verifyToken', e.target.value)} />
+            <FieldError msg={fieldErrors.verifyToken} />
             {/* [FIX-WA-2] Added webhookSecret field that was missing from edit modal */}
+            {/* [CRED-MODEL-8FIELD-1] Left in place for now — per the backend prompt's
+                renaming note ("Webhook Secret" → "Meta App Secret") this and
+                meta.appSecret should collapse into one field, but removing it here
+                needs tenantController.js's ALLOWED list confirmed first. */}
             <Input
               label={`Webhook Secret${tenant.whatsapp?.phoneNumberId ? ' (leave blank to keep existing)' : ''}`}
               value={form.whatsapp.webhookSecret}
@@ -905,6 +1014,12 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
                 dropped by the backend's allowlist and never actually saved. */}
             <Input label="Meta App ID (optional)" value={form.meta.appId}
               onChange={e => setMeta('appId', e.target.value)} placeholder="From Meta App Dashboard → Settings → Basic" />
+            <FieldError msg={fieldErrors.appId} />
+            {/* [CRED-MODEL-8FIELD-1] businessId pre-fills like appId (not sensitive) —
+                unlike appSecret below, it's never cleared after a successful save. */}
+            <Input label="Meta Business ID (optional)" value={form.meta.businessId}
+              onChange={e => setMeta('businessId', e.target.value)} placeholder="From Meta Business Manager → Business Settings" />
+            <FieldError msg={fieldErrors.businessId} />
             <Input
               label={`Meta App Secret${tenant.meta?.appId ? ' (leave blank to keep existing)' : ' (optional)'}`}
               value={form.meta.appSecret}
@@ -928,6 +1043,7 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
               <Input label="WhatsApp Catalog ID (optional)" value={form.waCatalog.catalogId}
                 onChange={e => setCatalog('catalogId', e.target.value)}
                 placeholder="From Meta Commerce Manager → Catalog → Settings" />
+              <FieldError msg={fieldErrors.catalogId} />
               <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
                 Must belong to the same Business Portfolio as this tenant's WhatsApp
                 Business Account, and the token above must have Manage-catalog

@@ -27,7 +27,12 @@ import toast from 'react-hot-toast';
 // so that stat has been dropped rather than invented. `status`/`connected`
 // are now derived client-side from the real fields below instead.
 const STATUS_META = {
-  not_connected: { label: 'Not Connected', color: 'gray',  Icon: XCircle,     desc: 'Ask your admin to connect a Catalog ID, then enable it below.' },
+  // [CATALOG-AUTOSYNC-1] Auto-sync is now the primary mechanism (backend
+  // auto-subscribes the catalog to the app during activation) — the tenant
+  // no longer needs to think of this as a two-step manual process. Your
+  // admin sets the Catalog ID once; subscription + activation follow
+  // automatically after that.
+  not_connected: { label: 'Not Connected', color: 'gray',  Icon: XCircle,     desc: 'Ask your admin to set a Catalog ID for your account — once it\'s set, syncing happens automatically.' },
   disabled:      { label: 'Disabled',      color: 'gray',  Icon: PowerOff,    desc: 'Catalog is configured but turned off — enable it below to go live.' },
   never_synced:  { label: 'Never Synced',  color: 'amber', Icon: Clock,       desc: 'Catalog is configured but has never been synced to Meta yet.' },
   sync_failed:   { label: 'Sync Failed',   color: 'red',   Icon: AlertCircle, desc: 'The last sync attempt failed — see the error below.' },
@@ -177,12 +182,18 @@ export default function CatalogPage() {
   // there is no separate `connected` field from the backend, so this is derived
   // from the same enabled+catalogId pair the backend itself gates the sync route on.
   const connected = !!(health?.enabled && health?.catalogId);
-  // Reasons are always exactly 'missing_image' and/or 'invalid_or_zero_price' —
+  // Reasons were always exactly 'missing_image' and/or 'invalid_or_zero_price' —
   // see waCatalogHelpers.isSyncableForCatalog. No "out of stock" field exists
   // anywhere in the schema or this gate, so it isn't shown here.
+  // [CATALOG-AUTOSYNC-1] A third bucket, 'sync_failed', can now appear per-item
+  // in skippedDetail — distinct from the two data-quality reasons above, this
+  // means the item itself is fine but Meta rejected/failed the push. Extends
+  // the same stat card rather than adding a new one, since this card already
+  // breaks down *why* items aren't live.
   const skippedDetail = health?.skippedDetail || [];
   const missingImages = skippedDetail.filter(s => s.reasons?.includes('missing_image')).length;
   const invalidPrice   = skippedDetail.filter(s => s.reasons?.includes('invalid_or_zero_price')).length;
+  const itemSyncFailed = skippedDetail.filter(s => s.reasons?.includes('sync_failed')).length;
 
   return (
     <div className="fade-in">
@@ -230,7 +241,7 @@ export default function CatalogPage() {
             <StatCard
               label="Data Issues"
               value={String(health.itemsSkipped ?? 0)}
-              sub={`${missingImages} missing image · ${invalidPrice} invalid price`}
+              sub={`${missingImages} missing image · ${invalidPrice} invalid price${itemSyncFailed ? ` · ${itemSyncFailed} failed to sync` : ''}`}
               icon={health.itemsSkipped ? ImageOff : PackageX}
               color={health.itemsSkipped ? 'amber' : 'green'}
             />
@@ -267,7 +278,7 @@ export default function CatalogPage() {
                   <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.5 }}>
                     {catalogId
                       ? "Set by your admin. Contact them if this needs to change."
-                      : 'Contact your admin to get your Meta Catalog ID connected.'}
+                      : 'Ask your admin to set your Meta Catalog ID — it\'s a one-time setup step. Once it\'s set, subscribing and syncing happen automatically, no further action needed from you.'}
                   </p>
                 </div>
                 <Select
@@ -287,16 +298,18 @@ export default function CatalogPage() {
               <Card>
                 <SectionHeading action={<Badge color={meta.color}>{meta.label}</Badge>}>Sync to Meta</SectionHeading>
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 16 }}>
-                  Pushes your current menu — name, price, image, and availability — to Meta's Commerce Catalog.
-                  Items missing a price or image are skipped automatically. Menu edits also auto-sync in the background,
-                  so manual syncing is mainly useful right after a big menu update.
+                  Every product create, update, and delete now pushes to Meta's Commerce Catalog automatically and
+                  near-instantly — you don't need to sync manually for day-to-day menu changes. This button forces a
+                  full catalog resync and is mainly there as a backup: use it right after a big bulk menu update, or
+                  to recover if an auto-sync failed (see Data Issues below). Items missing a price or image are
+                  skipped automatically either way.
                 </p>
                 <Btn onClick={runSync} loading={syncing} disabled={!connected} fullWidth variant={connected ? 'primary' : 'secondary'}>
                   <RefreshCw size={14} /> Sync Now
                 </Btn>
                 {!connected && (
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-ghost)', marginTop: 8, textAlign: 'center' }}>
-                    {catalogId ? 'Enable the catalog above first.' : 'Ask your admin to connect a Catalog ID first.'}
+                    {catalogId ? 'Enable the catalog above first.' : 'Ask your admin to set a Catalog ID first.'}
                   </div>
                 )}
               </Card>

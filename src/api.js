@@ -67,9 +67,17 @@ adminHttp.interceptors.request.use(cfg => {
 });
 
 // Surface backend error messages cleanly
+// [CRED-VALIDATION-1] Previously this discarded the raw response entirely —
+// rejecting with a bare `new Error(msg)` meant any caller reading
+// `err.response?.data?....` (e.g. AdminTenantsPage.jsx's per-field validation
+// display) always got undefined, silently. `err.message` behavior for every
+// existing caller is unchanged; this only adds a `.response` property so
+// structured backend payloads (per-field errors, etc.) are actually reachable.
 const errorInterceptor = err => {
   const msg = err.response?.data?.error || err.response?.data?.message || err.message || 'Network error';
-  return Promise.reject(new Error(msg));
+  const wrapped = new Error(msg);
+  wrapped.response = err.response;
+  return Promise.reject(wrapped);
 };
 
 // [AUDIT-FIX-SESSION-EXPIRY] A 401 through `http`/`adminHttp` means the stored
