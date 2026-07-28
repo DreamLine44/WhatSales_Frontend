@@ -208,7 +208,15 @@ export default function CatalogPage() {
         }
       />
 
-      {!phoneOk && (
+      {/* [AUDIT-FIX-CATALOG-FLASH-1] phoneOk defaults to false until load() resolves,
+          but this banner was rendered unconditionally on `!phoneOk` regardless of
+          `loading`. On every mount/reload that guaranteed a false-negative
+          "WhatsApp isn't connected" warning would flash for the ~1-2s the three
+          Promise.all requests take, then vanish once the real (connected) value
+          came back — even for tenants that were connected the whole time. Gating
+          this on `!loading` too means we simply don't render a verdict before we
+          actually have one. */}
+      {!loading && !phoneOk && (
         <InfoBanner type="warning" style={{ marginBottom: 20 }}>
           Your WhatsApp number isn't connected yet, so the catalog can't go live even if enabled here.
           Contact your account admin to get WhatsApp connected first.

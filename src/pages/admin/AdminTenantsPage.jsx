@@ -225,14 +225,19 @@ function CreateTenantModal({ onClose, onCreate }) {
       setCreated({ tenant: richTenant, apiKey, formWhatsapp: form.whatsapp });
       onCreate(richTenant);
       toast.success(`Tenant "${form.name.trim()}" created`);
-      setStep(3);
+      setStep(4);
     } catch (err) {
       // [CRED-VALIDATION-1] Surface the backend's per-field validation errors
       // inline, same pattern as WhatsAppConnectionPage.jsx's fieldErrors.
       const perField = err.response?.data?.lastValidationError;
       if (perField && typeof perField === 'object') {
         setFieldErrors(perField);
-        setStep(2);
+        // [AUDIT-FIX-STEP-SPLIT-1] Step 2 now only owns the core WhatsApp fields;
+        // appId/businessId/catalogId moved to step 3. Route back to whichever
+        // step actually contains the field the backend rejected instead of
+        // always dropping to step 2.
+        const STEP3_FIELDS = ['appId', 'businessId', 'catalogId'];
+        setStep(Object.keys(perField).some(k => STEP3_FIELDS.includes(k)) ? 3 : 2);
       }
       toast.error(err.message);
     } finally {
@@ -243,15 +248,23 @@ function CreateTenantModal({ onClose, onCreate }) {
   const selectedMode = SUPPORTED_MODES.find(m => m.value === form.businessMode);
 
   return (
-    <Modal onClose={step === 3 && created?.apiKey ? undefined : onClose} maxWidth={520}>
+    // [AUDIT-FIX-STEP-SPLIT-1] Was 2 steps + a "created" screen (step 3 doing
+    // double duty as both "last input step" and "results screen" in the
+    // onClose guard). The old step 2 crammed 10 fields — WhatsApp core creds,
+    // Meta app/business IDs, and the catalog ID — onto one screen. Split into
+    // 3 input steps + a results screen (now step 4): step 2 is WhatsApp core
+    // credentials, step 3 is Meta/catalog extras. Every `step === 3` /
+    // `setStep(3)` that used to mean "show results" now means "show step 3
+    // of input"; results moved to step 4 throughout this component.
+    <Modal onClose={step === 4 && created?.apiKey ? undefined : onClose} maxWidth={520}>
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1.1rem', marginBottom: 10 }}>
-          {step < 3 ? 'Create Tenant' : '🎉 Tenant Created'}
+          {step < 4 ? 'Create Tenant' : '🎉 Tenant Created'}
         </h2>
-        {step < 3 && (
+        {step < 4 && (
           <>
             <div style={{ display: 'flex', gap: 6 }}>
-              {[1, 2].map(s => (
+              {[1, 2, 3].map(s => (
                 <div key={s} style={{
                   height: 3, flex: 1, borderRadius: 99,
                   background: s <= step ? 'var(--primary)' : 'var(--border-mid)',
@@ -260,7 +273,7 @@ function CreateTenantModal({ onClose, onCreate }) {
               ))}
             </div>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 6 }}>
-              Step {step} of 2 — {step === 1 ? 'Business info' : 'WhatsApp credentials (optional)'}
+              Step {step} of 3 — {step === 1 ? 'Business info' : step === 2 ? 'WhatsApp credentials (optional)' : 'Meta & catalog details (optional)'}
             </p>
           </>
         )}
@@ -307,7 +320,7 @@ function CreateTenantModal({ onClose, onCreate }) {
         </div>
       )}
 
-      {/* Step 2 */}
+      {/* Step 2 — WhatsApp core credentials */}
       {step === 2 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{
@@ -325,9 +338,14 @@ function CreateTenantModal({ onClose, onCreate }) {
           <Input label="Access Token" value={form.whatsapp.accessToken}
             onChange={e => setWA('accessToken', e.target.value)} placeholder="EAAxxxxxxxx..." type="password" />
           <FieldError msg={fieldErrors.accessToken} />
+          <Input label="WhatsApp Phone Number" value={form.whatsapp.phone}
+            onChange={e => setWA('phone', e.target.value)} placeholder="+220 xxx xxxx" />
           <Input label="Verify Token" value={form.whatsapp.verifyToken}
             onChange={e => setWA('verifyToken', e.target.value)} placeholder="A random secret string" />
-          <FieldError msg={fieldErrors.verifyToken} />
+          <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: -8, lineHeight: 1.5 }}>
+            This one's yours to invent — any random string. You'll paste this same value into Meta's
+            webhook setup screen; Meta echoes it back on subscribe so we can confirm the callback URL is really yours.
+          </p>
           {/* [FIX-CREATE-4] Added webhookSecret field that was missing */}
           {/* [CRED-MODEL-8FIELD-1] Left in place for now — the backend prompt's
               renaming note ("Webhook Secret" → "Meta App Secret") says this and
@@ -336,6 +354,32 @@ function CreateTenantModal({ onClose, onCreate }) {
               to have actually dropped whatsapp.webhookSecret. */}
           <Input label="Webhook Secret (optional)" value={form.whatsapp.webhookSecret}
             onChange={e => setWA('webhookSecret', e.target.value)} placeholder="Secret for webhook signature verification" />
+          {/* [AUDIT-FIX-SECRET-CLARITY-1] The two secrets on this screen look
+              interchangeable but come from opposite places — Webhook Secret is
+              self-chosen (see hint above), Meta App Secret is generated by Meta
+              and lives on the next step. Spelling that out here since this was
+              flagged as confusing. */}
+          <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: -8, lineHeight: 1.5 }}>
+            Not the same as the <strong>Meta App Secret</strong> on the next step — that one comes from
+            Meta, not from you.
+          </p>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <Btn variant="ghost" fullWidth onClick={() => setStep(1)}>← Back</Btn>
+            <Btn fullWidth onClick={() => setStep(3)}>Next: Meta & Catalog →</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3 — Meta app & catalog extras */}
+      {step === 3 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{
+            background: 'var(--bg-overlay)', borderRadius: 'var(--r-md)',
+            padding: '10px 14px', fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.6,
+          }}>
+            Optional — these can all be added later from the tenant edit panel too.
+          </div>
           {/* [FIX-META-PLACEMENT] App ID lives on tenant.meta.appId, a sibling of
               whatsapp — not sensitive, so it's fine to collect at create time.
               App Secret is intentionally NOT here: createTenant doesn't accept
@@ -357,25 +401,25 @@ function CreateTenantModal({ onClose, onCreate }) {
           <Input label="WhatsApp Catalog ID (optional)" value={form.waCatalog.catalogId}
             onChange={e => setCatalog('catalogId', e.target.value)} placeholder="From Meta Commerce Manager → Catalog → Settings" />
           <FieldError msg={fieldErrors.catalogId} />
-          <Input label="WhatsApp Phone Number" value={form.whatsapp.phone}
-            onChange={e => setWA('phone', e.target.value)} placeholder="+220 xxx xxxx" />
           <div style={{
             background: 'var(--bg-overlay)', borderRadius: 'var(--r-md)',
             padding: '9px 12px', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5,
           }}>
-            App Secret can be added afterwards from this tenant's Edit panel — it isn't
-            collected here since creation doesn't accept it yet.
+            <strong>Meta App Secret</strong> isn't collected here — it comes from Meta App Dashboard →
+            Settings → Basic → App Secret, and today's createTenant endpoint doesn't accept it (only
+            the Edit form's updateTenant call does). Add it afterwards from this tenant's Edit panel →
+            WhatsApp tab.
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-            <Btn variant="ghost" fullWidth onClick={() => setStep(1)}>← Back</Btn>
+            <Btn variant="ghost" fullWidth onClick={() => setStep(2)}>← Back</Btn>
             <Btn fullWidth onClick={submit} loading={saving}>Create Tenant</Btn>
           </div>
         </div>
       )}
 
-      {/* Step 3 — Credentials */}
-      {step === 3 && created && (
+      {/* Step 4 — Credentials (results screen; was step 3 before the step-2 split) */}
+      {step === 4 && created && (
         <div>
           <CopyField label="Tenant ID" value={String(created.tenant._id)} />
           {created.apiKey
