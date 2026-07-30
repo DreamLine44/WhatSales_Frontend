@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { UtensilsCrossed, Plus, Trash2, Pencil, Check, X, ToggleLeft, ToggleRight, Image as ImageIcon, Upload, ChevronDown, ChevronUp, ClipboardList, AlertTriangle, Loader2 } from 'lucide-react';
 import { menuApi, bizApi, formatMoney } from '../api.js';
 import { useAuth } from '../store/AuthContext.jsx';
@@ -94,17 +95,113 @@ function AdvancedFields({ form, setForm }) {
   );
 }
 
-function BulkAddForm({ currency, onAdded, onCancel }) {
+// [BULK-ADD-PHOTOS-1] Single tile in the post-bulk-add photo step. Mirrors
+// ItemRow's image control/upload logic, but scoped to just-created items so
+// the tenant can attach photos to a whole bulk paste in one screen instead of
+// opening each item individually afterward. Photos matter beyond cosmetics
+// here: per waCatalogHelpers.isSyncableForCatalog (see CatalogPage.jsx), an
+// item with no image is skipped entirely from the Meta WhatsApp Catalog sync
+// — this step exists mainly to close that gap right after a bulk paste.
+function BulkPhotoTile({ item, cloudinaryEnabled, onUploaded }) {
+  const [uploading, setUploading] = useState(false);
+
+  const uploadImage = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      const r = await menuApi.uploadImage(item._id, fd);
+      const updated = r.data?.menuItem || { ...item, image: r.data?.image };
+      onUploaded(updated);
+    } catch (err) {
+      const msg = err.message?.toLowerCase().includes('cloudinary') || err.message?.includes('503')
+        ? 'Image uploads aren\'t set up for this business yet.'
+        : err.message;
+      toast.error(msg);
+    } finally { setUploading(false); }
+  };
+
+  const removeImage = async () => {
+    setUploading(true);
+    try {
+      await menuApi.removeImage(item._id);
+      onUploaded({ ...item, image: null });
+      toast.success('Image removed');
+    } catch (err) { toast.error(err.message); }
+    finally { setUploading(false); }
+  };
+
+  const zeroPrice = !item.price || Number(item.price) <= 0;
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+      border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
+    }}>
+      <label
+        title={cloudinaryEnabled ? (item.image?.url ? 'Change image' : 'Add image') : 'Image uploads not enabled'}
+        style={{
+          width: 44, height: 44, borderRadius: 'var(--r-md)', overflow: 'hidden',
+          border: '1.5px solid var(--border)', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', background: 'var(--bg-overlay)',
+          cursor: cloudinaryEnabled ? 'pointer' : 'not-allowed', flexShrink: 0, position: 'relative',
+        }}
+      >
+        {uploading ? (
+          <Loader2 size={15} color="var(--text-ghost)" style={{ animation: 'spin 0.8s linear infinite' }} />
+        ) : item.image?.url ? (
+          <img src={item.image.url} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          cloudinaryEnabled ? <Upload size={14} color="var(--text-ghost)" /> : <ImageIcon size={14} color="var(--text-ghost)" />
+        )}
+        <input
+          type="file" accept="image/*" style={{ display: 'none' }}
+          disabled={!cloudinaryEnabled || uploading}
+          onChange={e => uploadImage(e.target.files?.[0])}
+        />
+      </label>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{item.name}</div>
+        {zeroPrice && (
+          <div style={{ fontSize: '0.7rem', color: 'var(--amber)', fontWeight: 600 }}>
+            $0 price — also won't sync to Meta until priced
+          </div>
+        )}
+      </div>
+      {item.image?.url && (
+        <button type="button" onClick={removeImage} disabled={uploading}
+          style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: 0, fontSize: '0.76rem', fontWeight: 600 }}>
+          Remove
+        </button>
+      )}
+    </div>
+  );
+}
+
+function BulkAddForm({ currency, existingItems, cloudinaryEnabled, waCatalogEnabled, onAdded, onItemImageUpdated, onCancel, onGoToCatalog }) {
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState(null); // { done, total }
+  // 'input' = pasting/reviewing rows, 'photos' = post-add photo step for the
+  // items that were just created by this bulk submit.
+  const [phase, setPhase] = useState('input');
+  const [photoItems, setPhotoItems] = useState([]);
 
   const rows = useMemo(() => parseBulkMenuText(text), [text]);
   const validRows = rows.filter(r => r.errors.length === 0);
   const invalidRows = rows.filter(r => r.errors.length > 0);
+  // [CATALOG-AWARE-BULK-1] Rows that will parse and create fine but won't
+  // actually reach Meta's catalog — mirrors CatalogPage's
+  // isSyncableForCatalog 'invalid_or_zero_price' reason. Only worth flagging
+  // when this tenant actually has the catalog enabled.
+  const zeroPriceCount = waCatalogEnabled ? validRows.filter(r => !r.price || r.price <= 0).length : 0;
 
   const submit = async () => {
     if (validRows.length === 0) { toast.error('Add at least one valid line first'); return; }
+    // Snapshot which _ids already existed *before* this run, so we can tell
+    // apart the freshly-created items afterward for the photo step.
+    const beforeIds = new Set((existingItems || []).map(i => i._id));
     setSubmitting(true);
     setProgress({ done: 0, total: validRows.length });
     let latestMenuItems = null;
@@ -141,7 +238,60 @@ function BulkAddForm({ currency, onAdded, onCancel }) {
       // Leave only the failed lines in the box so the tenant can fix & retry.
       setText(failed.map(f => f.raw).join('\n'));
     }
+    // Hand off into the photo step for whatever just got created — only
+    // worth showing if image uploads are actually configured for this tenant.
+    const newlyAdded = (latestMenuItems || []).filter(mi => !beforeIds.has(mi._id));
+    if (cloudinaryEnabled && newlyAdded.length > 0) {
+      setPhotoItems(newlyAdded);
+      setPhase('photos');
+    }
   };
+
+  if (phase === 'photos') {
+    const stillMissing = photoItems.filter(i => !i.image?.url).length;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          Your items are added. Want to attach a photo to any of them now? You can always add or change these later
+          from the menu list.
+          {/* [CATALOG-AWARE-BULK-1] Backend auto-syncs every menu create/update
+              to Meta's WhatsApp Commerce Catalog (see waCatalogService.js /
+              CATALOG-AUTOSYNC-1) — but only items with a price and an image
+              are eligible, so this is the moment that decides whether these
+              new items actually show up there. */}
+          {waCatalogEnabled && (
+            <> Your WhatsApp Catalog is enabled for this business — items without a photo here will be skipped
+              when they sync to Meta.</>
+          )}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto' }}>
+          {photoItems.map(item => (
+            <BulkPhotoTile
+              key={item._id}
+              item={item}
+              cloudinaryEnabled={cloudinaryEnabled}
+              onUploaded={(updated) => {
+                setPhotoItems(prev => prev.map(i => i._id === updated._id ? updated : i));
+                onItemImageUpdated(updated);
+              }}
+            />
+          ))}
+        </div>
+        {waCatalogEnabled && stillMissing > 0 && (
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-ghost)' }}>
+            {stillMissing} item{stillMissing !== 1 ? 's' : ''} still without a photo won't appear in your Meta
+            catalog until one's added.
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Btn onClick={onCancel}><Check size={14} /> Done</Btn>
+          {waCatalogEnabled && (
+            <Btn variant="ghost" onClick={onGoToCatalog}>View Catalog status</Btn>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -174,6 +324,11 @@ function BulkAddForm({ currency, onAdded, onCancel }) {
             {invalidRows.length > 0 && (
               <span style={{ color: 'var(--red)', fontWeight: 700 }}>{invalidRows.length} need fixing</span>
             )}
+            {zeroPriceCount > 0 && (
+              <span style={{ color: 'var(--amber)', fontWeight: 700 }}>
+                {zeroPriceCount} won't sync to Meta ($0 price)
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -202,6 +357,9 @@ function BulkAddForm({ currency, onAdded, onCancel }) {
             }}>
               <span style={{ fontWeight: 600 }}>{r.name}</span>
               <span style={{ color: 'var(--text-muted)', flex: 1 }}>{r.description}</span>
+              {waCatalogEnabled && (!r.price || r.price <= 0) && (
+                <span style={{ color: 'var(--amber)', fontWeight: 600 }}>$0 · won't sync</span>
+              )}
               <span style={{ fontWeight: 700, color: 'var(--primary)' }}>{formatMoney(r.price, currency, 2)}</span>
             </div>
           ))}
@@ -461,6 +619,12 @@ export default function MenuPage() {
   // environment before offering an upload control — avoids a confusing
   // "upload failed" the first time someone tries, per Appendix C spec.
   const [cloudinaryEnabled, setCloudinaryEnabled] = useState(false);
+  // [CATALOG-AWARE-BULK-1] Whether this tenant's Meta WhatsApp Catalog is
+  // turned on — drives the bulk-add photo step's copy/warnings below.
+  // Read-only here; configuring it lives on CatalogPage (see bizApi.getSettings
+  // → business.waCatalog, same field CatalogPage.jsx reads).
+  const [waCatalogEnabled, setWaCatalogEnabled] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     menuApi.list()
@@ -470,6 +634,9 @@ export default function MenuPage() {
     bizApi.cloudinaryStatus()
       .then(r => setCloudinaryEnabled(!!r.data?.cloudinaryEnabled))
       .catch(() => setCloudinaryEnabled(false));
+    bizApi.getSettings()
+      .then(r => setWaCatalogEnabled(!!r.data?.business?.waCatalog?.enabled))
+      .catch(() => setWaCatalogEnabled(false));
   }, []);
 
   const handleUpdate = (newList, updatedItem) => {
@@ -582,8 +749,13 @@ export default function MenuPage() {
           {addMode === 'bulk' ? (
             <BulkAddForm
               currency={user?.currency}
+              existingItems={menuItems}
+              cloudinaryEnabled={cloudinaryEnabled}
+              waCatalogEnabled={waCatalogEnabled}
               onAdded={(newList) => { setMenuItems(newList); }}
+              onItemImageUpdated={(updated) => handleUpdate(null, updated)}
               onCancel={() => setAdding(false)}
+              onGoToCatalog={() => navigate('/setup/catalog')}
             />
           ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
