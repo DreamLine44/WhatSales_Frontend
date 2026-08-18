@@ -3,7 +3,8 @@ import { superAdminSession } from '../api.js';
 import axios from 'axios';
 
 const AdminContext = createContext(null);
-const BASE_URL = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up.railway.app';
+const BASE_URL = import.meta.env.VITE_API_URL;
+if (!BASE_URL) throw new Error('VITE_API_URL must be configured before starting WhatSales.');
 
 export function AdminProvider({ children }) {
   const [isAdmin, setIsAdmin] = useState(false);

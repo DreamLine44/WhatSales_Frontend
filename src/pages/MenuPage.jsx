@@ -486,10 +486,20 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled, currency }) {
     finally { setUploading(false); }
   };
 
+  // [MENU-GRID-1] Card/gallery layout — one tile per item, image up top,
+  // details + actions below. Editing mode spans the full grid width (via
+  // gridColumn on the outer wrapper) so the multi-field form has room to
+  // breathe instead of being squeezed into a single card's column width.
   return (
-    <div style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '14px 18px', marginBottom: 8 }}>
+    <div style={{
+      background: 'var(--bg-surface)', border: '1.5px solid var(--border)', borderRadius: 'var(--r-lg)',
+      overflow: 'hidden', display: 'flex', flexDirection: 'column',
+      gridColumn: editing ? '1 / -1' : undefined,
+      opacity: item.available === false && !editing ? 0.72 : 1,
+      transition: 'box-shadow 0.15s, transform 0.15s, opacity 0.15s',
+    }}>
       {editing ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '16px 18px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
             <Input label="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
             <Input label={`Price (${currency || 'D'})`} type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} />
@@ -512,24 +522,25 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled, currency }) {
           </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          {/* Image thumbnail / upload control */}
-          <div style={{ flexShrink: 0, position: 'relative' }}>
+        <>
+          {/* Image / photo tile — full-bleed, click-to-upload */}
+          <div style={{ position: 'relative', width: '100%', height: 138, flexShrink: 0, background: 'var(--bg-overlay)' }}>
             <label
               title={cloudinaryEnabled ? (item.image?.url ? 'Change image' : 'Add image') : 'Image uploads not enabled'}
               style={{
-                width: 52, height: 52, borderRadius: 'var(--r-md)', overflow: 'hidden',
-                border: '1.5px solid var(--border)', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', background: 'var(--bg-overlay)',
-                cursor: cloudinaryEnabled ? 'pointer' : 'not-allowed', flexShrink: 0,
+                display: 'block', width: '100%', height: '100%',
+                cursor: cloudinaryEnabled ? 'pointer' : 'not-allowed', position: 'relative',
               }}
             >
               {uploading ? (
-                <Spinner size={16} />
+                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spinner size={20} /></div>
               ) : item.image?.url ? (
                 <img src={item.image.url} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
-                cloudinaryEnabled ? <Upload size={16} color="var(--text-ghost)" /> : <ImageIcon size={16} color="var(--text-ghost)" />
+                <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                  {cloudinaryEnabled ? <Upload size={20} color="var(--text-ghost)" /> : <ImageIcon size={20} color="var(--text-ghost)" />}
+                  {cloudinaryEnabled && <span style={{ fontSize: '0.68rem', color: 'var(--text-ghost)', fontWeight: 600 }}>Add photo</span>}
+                </div>
               )}
               <input
                 type="file" accept="image/*" style={{ display: 'none' }}
@@ -540,56 +551,75 @@ function ItemRow({ item, onUpdate, onDelete, cloudinaryEnabled, currency }) {
             {item.image?.url && cloudinaryEnabled && (
               <button onClick={removeImage} disabled={uploading} title="Remove image"
                 style={{
-                  position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%',
-                  background: 'var(--red)', color: '#fff', border: '2px solid var(--bg-surface)',
+                  position: 'absolute', top: 8, right: 8, width: 22, height: 22, borderRadius: '50%',
+                  background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
                 }}>
-                <X size={10} />
+                <X size={12} />
               </button>
             )}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-              <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{item.name}</span>
-              {!item.available && (
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-ghost)', fontWeight: 600 }}>UNAVAILABLE</span>
-              )}
-              {item.tags?.length > 0 && item.tags.map(tag => (
-                <span key={tag} style={{ fontSize: '0.67rem', background: 'var(--primary-dim)', color: 'var(--primary)', borderRadius: 99, padding: '1px 7px', fontWeight: 700 }}>{tag}</span>
-              ))}
-              {item.category && (
-                <span style={{ fontSize: '0.67rem', background: 'var(--bg-overlay)', color: 'var(--text-muted)', borderRadius: 99, padding: '1px 7px', fontWeight: 700, border: '1px solid var(--border)' }}>{item.category}</span>
-              )}
-              {item.stockCount != null && (
-                <span style={{ fontSize: '0.67rem', background: item.stockCount > 0 ? 'var(--blue-dim, var(--bg-overlay))' : 'var(--red-dim)', color: item.stockCount > 0 ? 'var(--blue)' : 'var(--red)', borderRadius: 99, padding: '1px 7px', fontWeight: 700 }}>
-                  {item.stockCount} in stock
-                </span>
-              )}
-              {item.variants?.length > 0 && (
-                <span style={{ fontSize: '0.67rem', background: 'var(--bg-overlay)', color: 'var(--text-muted)', borderRadius: 99, padding: '1px 7px', fontWeight: 700, border: '1px solid var(--border)' }}>
-                  {item.variants.length} option{item.variants.length !== 1 ? 's' : ''}
-                </span>
-              )}
-            </div>
-            {item.description && (
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 2 }}>{item.description}</div>
-            )}
-            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--primary)' }}>
-              {formatMoney(item.price, currency, 2)}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+            {/* Available/unavailable toggle — pinned corner badge, mirrors the
+                red status dot pattern used across the dashboard's list rows. */}
             <button onClick={toggleAvail} disabled={toggling}
               title={item.available ? 'Mark unavailable' : 'Mark available'}
-              style={{ color: item.available ? 'var(--primary)' : 'var(--text-ghost)', display: 'flex', cursor: 'pointer', background: 'none', border: 'none', padding: 4 }}>
-              {item.available ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+              style={{
+                position: 'absolute', top: 8, left: 8, width: 22, height: 22, borderRadius: '50%',
+                background: item.available ? 'rgba(255,255,255,0.92)' : 'var(--red)',
+                color: item.available ? 'var(--primary)' : '#fff',
+                border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', padding: 0, boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+              }}>
+              {item.available ? <ToggleRight size={13} /> : <X size={12} />}
             </button>
-            <Btn variant="ghost" size="sm" onClick={() => setEditing(true)} title="Edit"><Pencil size={13} /></Btn>
-            <Btn variant="ghost" size="sm" onClick={del} loading={deleting} style={{ color: 'var(--red)' }} title="Delete">
-              <Trash2 size={13} />
+          </div>
+
+          {/* Body */}
+          <div style={{ padding: '11px 13px 4px', flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
+              <span style={{ fontWeight: 700, fontSize: '0.87rem', lineHeight: 1.3 }}>{item.name}</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--primary)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                {formatMoney(item.price, currency, 2)}
+              </span>
+            </div>
+            {item.description && (
+              <div style={{
+                fontSize: '0.76rem', color: 'var(--text-muted)', lineHeight: 1.4,
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+              }}>{item.description}</div>
+            )}
+            {(!item.available || item.tags?.length > 0 || item.category || item.stockCount != null || item.variants?.length > 0) && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
+                {!item.available && (
+                  <span style={{ fontSize: '0.63rem', background: 'var(--red-dim, rgba(220,38,38,0.08))', color: 'var(--red)', borderRadius: 99, padding: '1px 7px', fontWeight: 700 }}>Unavailable</span>
+                )}
+                {item.tags?.length > 0 && item.tags.map(tag => (
+                  <span key={tag} style={{ fontSize: '0.63rem', background: 'var(--primary-dim)', color: 'var(--primary)', borderRadius: 99, padding: '1px 7px', fontWeight: 700 }}>{tag}</span>
+                ))}
+                {item.category && (
+                  <span style={{ fontSize: '0.63rem', background: 'var(--bg-overlay)', color: 'var(--text-muted)', borderRadius: 99, padding: '1px 7px', fontWeight: 700, border: '1px solid var(--border)' }}>{item.category}</span>
+                )}
+                {item.stockCount != null && (
+                  <span style={{ fontSize: '0.63rem', background: item.stockCount > 0 ? 'var(--blue-dim, var(--bg-overlay))' : 'var(--red-dim)', color: item.stockCount > 0 ? 'var(--blue)' : 'var(--red)', borderRadius: 99, padding: '1px 7px', fontWeight: 700 }}>
+                    {item.stockCount} in stock
+                  </span>
+                )}
+                {item.variants?.length > 0 && (
+                  <span style={{ fontSize: '0.63rem', background: 'var(--bg-overlay)', color: 'var(--text-muted)', borderRadius: 99, padding: '1px 7px', fontWeight: 700, border: '1px solid var(--border)' }}>
+                    {item.variants.length} option{item.variants.length !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Footer actions */}
+          <div style={{ display: 'flex', gap: 6, padding: '8px 10px 10px', justifyContent: 'flex-end', borderTop: '1px solid var(--border)', marginTop: 8 }}>
+            <Btn variant="ghost" size="xs" onClick={() => setEditing(true)} title="Edit"><Pencil size={12} /> Edit</Btn>
+            <Btn variant="ghost" size="xs" onClick={del} loading={deleting} style={{ color: 'var(--red)' }} title="Delete">
+              <Trash2 size={12} />
             </Btn>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
@@ -840,7 +870,7 @@ export default function MenuPage() {
           />
         </Card>
       ) : (
-        <div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
           {menuItems.map((item) => (
             <ItemRow key={item._id} item={item} onUpdate={handleUpdate} onDelete={handleDelete} cloudinaryEnabled={cloudinaryEnabled} currency={user?.currency} />
           ))}

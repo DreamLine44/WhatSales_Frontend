@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './store/AuthContext.jsx';
 import { AdminProvider, useAdmin } from './store/AdminContext.jsx';
@@ -8,34 +9,30 @@ import { Spinner } from './components/ui.jsx';
 import DashboardLayout from './components/DashboardLayout.jsx';
 import AdminLayout from './components/AdminLayout.jsx';
 
-// Public
-import LoginPage from './pages/LoginPage.jsx';
-import AcceptInvitePage from './pages/AcceptInvitePage.jsx';
-
-// Tenant pages
-import DashboardPage from './pages/DashboardPage.jsx';
-import OrdersPage from './pages/OrdersPage.jsx';
-import BookingsPage from './pages/BookingsPage.jsx';
-import SessionsPage from './pages/SessionsPage.jsx';
-import AnalyticsPage from './pages/AnalyticsPage.jsx';
-import CustomersPage from './pages/CustomersPage.jsx';
-import AutoRepliesPage from './pages/AutoRepliesPage.jsx';
-import BusinessInfoPage from './pages/BusinessInfoPage.jsx';
-import MenuPage from './pages/MenuPage.jsx';
-import CatalogPage from './pages/CatalogPage.jsx';
-import PreferencesPage from './pages/PreferencesPage.jsx';
-import PromotionsPage from './pages/PromotionsPage.jsx';
-import ServicesPage from './pages/ServicesPage.jsx';
-import OpeningHoursPage from './pages/OpeningHoursPage.jsx';
-import BotMessagesPage from './pages/BotMessagesPage.jsx';
-import WhatsAppPage from './pages/WhatsAppPage.jsx';
-import NotificationsPage from './pages/NotificationsPage.jsx';
-import StaffPage from './pages/StaffPage.jsx';
-
-// Admin pages
-import AdminDashboardPage from './pages/admin/AdminDashboardPage.jsx';
-import AdminTenantsPage from './pages/admin/AdminTenantsPage.jsx';
-import AdminMessagesPage from './pages/admin/AdminMessagesPage.jsx';
+const LoginPage = lazy(() => import('./pages/LoginPage.jsx'));
+const AcceptInvitePage = lazy(() => import('./pages/AcceptInvitePage.jsx'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage.jsx'));
+const OrdersPage = lazy(() => import('./pages/OrdersPage.jsx'));
+const BookingsPage = lazy(() => import('./pages/BookingsPage.jsx'));
+const SessionsPage = lazy(() => import('./pages/SessionsPage.jsx'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage.jsx'));
+const CustomersPage = lazy(() => import('./pages/CustomersPage.jsx'));
+const AutoRepliesPage = lazy(() => import('./pages/AutoRepliesPage.jsx'));
+const BusinessInfoPage = lazy(() => import('./pages/BusinessInfoPage.jsx'));
+const MenuPage = lazy(() => import('./pages/MenuPage.jsx'));
+const CatalogPage = lazy(() => import('./pages/CatalogPage.jsx'));
+const PreferencesPage = lazy(() => import('./pages/PreferencesPage.jsx'));
+const PaymentPage = lazy(() => import('./pages/PaymentPage.jsx'));
+const PromotionsPage = lazy(() => import('./pages/PromotionsPage.jsx'));
+const ServicesPage = lazy(() => import('./pages/ServicesPage.jsx'));
+const OpeningHoursPage = lazy(() => import('./pages/OpeningHoursPage.jsx'));
+const BotMessagesPage = lazy(() => import('./pages/BotMessagesPage.jsx'));
+const WhatsAppPage = lazy(() => import('./pages/WhatsAppPage.jsx'));
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage.jsx'));
+const StaffPage = lazy(() => import('./pages/StaffPage.jsx'));
+const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage.jsx'));
+const AdminTenantsPage = lazy(() => import('./pages/admin/AdminTenantsPage.jsx'));
+const AdminMessagesPage = lazy(() => import('./pages/admin/AdminMessagesPage.jsx'));
 
 // ── Route guards ──────────────────────────────────────────────────────────────
 function RequireAuth({ children }) {
@@ -86,6 +83,7 @@ export default function App() {
             }}
           />
 
+          <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><Spinner size={36} /></div>}>
           <Routes>
             {/* Public */}
             <Route path="/login" element={<RedirectIfLoggedIn><LoginPage /></RedirectIfLoggedIn>} />
@@ -104,6 +102,7 @@ export default function App() {
               <Route path="/auto-replies"   element={<AutoRepliesPage />} />
               <Route path="/messages"       element={<NotificationsPage />} />
               <Route path="/setup/business" element={<BusinessInfoPage />} />
+              <Route path="/setup/payment"  element={<PaymentPage />} />
               <Route path="/setup/menu"     element={<MenuPage />} />
               <Route path="/setup/catalog"  element={<CatalogPage />} />
               <Route path="/setup/preferences" element={<PreferencesPage />} />
@@ -124,6 +123,7 @@ export default function App() {
             {/* Catch-all */}
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
+          </Suspense>
         </AdminProvider>
       </AuthProvider>
     </BrowserRouter>

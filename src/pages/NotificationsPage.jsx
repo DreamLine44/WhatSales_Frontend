@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Bell, Send, Inbox, ArrowUpRight, Check, MessageSquarePlus } from 'lucide-react';
 import { notificationsApi } from '../api.js';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Input, Select, Textarea, Badge, Tabs, Pagination, Modal } from '../components/ui.jsx';
@@ -77,7 +77,7 @@ export default function NotificationsPage() {
   const [form, setForm]         = useState({ subject: '', body: '', severity: 'info' });
   const [sending, setSending]   = useState(false);
 
-  const load = async (p = page) => {
+  const load = useCallback(async (p) => {
     setLoading(true);
     try {
       const r = await notificationsApi.list({ page: p, limit: 20 });
@@ -89,12 +89,16 @@ export default function NotificationsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
+  // The state updates are asynchronous request results, not synchronous effect updates.
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load(1); setPage(1); }, [tab]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load(page); }, [page]);
+  useEffect(() => { load(page); }, [load, page, tab]);
+
+  const changeTab = (nextTab) => {
+    setTab(nextTab);
+    setPage(1);
+  };
 
   const filtered = items.filter(n => tab === 'inbox' ? n.direction === 'TO_TENANT' : n.direction === 'TO_ADMIN');
 
@@ -142,7 +146,7 @@ export default function NotificationsPage() {
           { value: 'sent',  label: 'Sent' },
         ]}
         active={tab}
-        onChange={setTab}
+        onChange={changeTab}
       />
 
       <div style={{ marginTop: 16 }}>

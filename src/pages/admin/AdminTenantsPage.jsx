@@ -905,7 +905,7 @@ function EditTenantModal({ tenant: initialTenant, onClose, onUpdate }) {
     transition: 'all 0.15s',
   });
 
-  const apiBase    = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up.railway.app';
+  const apiBase    = import.meta.env.VITE_API_URL;
   // The webhook is a single shared Meta endpoint — /webhook (no tenant ID in path)
   // Backend routes by phoneNumberId in the Meta payload, not by URL segment
   const webhookUrl = `${apiBase}/webhook`;

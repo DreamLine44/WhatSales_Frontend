@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ShoppingCart, Calendar, UtensilsCrossed,
   Scissors, MessageSquare, BarChart3, Users, HelpCircle,
   Building2, Clock, Bot, Wifi, LogOut, ChevronRight,
-  Menu, X, Zap, ShoppingBag, Bell, Settings2, Tag, UserCog,
+  Menu, X, Zap, ShoppingBag, Bell, Settings2, Tag, UserCog, Wallet,
 } from 'lucide-react';
 import { useAuth } from '../store/AuthContext.jsx';
 import { Logo } from './ui.jsx';
@@ -181,6 +181,7 @@ function SidebarContent({ user, modeConfig, hasBookings, hasMenu, hasServices, o
 
         <NavSection label="Setup">
           <NavItem to="/setup/business" icon={Building2}     label="Business Info"  onClick={onClose} />
+          <NavItem to="/setup/payment"  icon={Wallet}        label="Payment"        onClick={onClose} />
           {hasMenu     && <NavItem to="/setup/menu"     icon={UtensilsCrossed} label="Menu / Products" onClick={onClose} />}
           {hasMenu     && <NavItem to="/setup/catalog"  icon={ShoppingBag}     label="WhatsApp Catalog" onClick={onClose} />}
           {hasServices && <NavItem to="/setup/services" icon={Scissors}        label="Services"        onClick={onClose} />}

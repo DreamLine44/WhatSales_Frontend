@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Bell, Send, Inbox, Radio, Check, MessageSquarePlus } from 'lucide-react';
 import { adminApi, adminNotificationsApi } from '../../api.js';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Input, Select, Textarea, Badge, Tabs, Pagination, Modal, InfoBanner } from '../../components/ui.jsx';
@@ -85,12 +85,12 @@ export default function AdminMessagesPage() {
       .catch(() => {});
   }, []);
 
-  const load = async (p = page) => {
+  const load = useCallback(async (p, direction) => {
     setLoading(true);
     try {
       const r = await adminNotificationsApi.list({
         page: p, limit: 20,
-        direction: tab === 'inbox' ? 'TO_ADMIN' : 'TO_TENANT',
+        direction,
       });
       setItems(r.data?.notifications || []);
       setPages(r.data?.pages || 1);
@@ -100,12 +100,16 @@ export default function AdminMessagesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
+  // The state updates are asynchronous request results, not synchronous effect updates.
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load(1); setPage(1); }, [tab]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load(page); }, [page]);
+  useEffect(() => { load(page, tab === 'inbox' ? 'TO_ADMIN' : 'TO_TENANT'); }, [load, page, tab]);
+
+  const changeTab = (nextTab) => {
+    setTab(nextTab);
+    setPage(1);
+  };
 
   const tenantName = (id) => tenants.find(t => String(t._id) === String(id))?.name;
 
@@ -161,7 +165,7 @@ export default function AdminMessagesPage() {
           { value: 'sent',  label: 'Sent / Broadcasts' },
         ]}
         active={tab}
-        onChange={setTab}
+        onChange={changeTab}
       />
 
       <div style={{ marginTop: 16 }}>

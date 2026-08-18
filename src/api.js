@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { useState, useEffect } from 'react';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'https://web-production-32cc.up.railway.app';
+const BASE_URL = import.meta.env.VITE_API_URL;
+if (!BASE_URL) throw new Error('VITE_API_URL must be configured before starting WhatSales.');
 
 // ── Credential helpers ────────────────────────────────────────────────────────
 function getApiKey()   { return localStorage.getItem('ws_api_key') || ''; }
