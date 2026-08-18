@@ -48,6 +48,94 @@ export default function BusinessSetupPage() {
 
   if (loading) return <Spinner />;
 
+  // SAMPLE one-click setup — a tenant can apply a prebuilt restaurant setup
+  const SAMPLE_SETUP = {
+    name: "DreamLine Restaurant (YM Store)",
+    description: "DreamLine Restaurant is a popular Gambian restaurant serving authentic local dishes including benachin, domoda, superkanja, and fresh juices. We offer dine-in, takeaway, and delivery within the local area.",
+    businessMode: "RESTAURANT",
+    adminPhone: "+2203532423",
+    menu: [
+      { name: "Benachin (Chicken)", price: 175, available: true },
+      { name: "Benachin (Fish)", price: 150, available: true },
+      { name: "Domoda (Beef)", price: 200, available: true },
+      { name: "Domoda (Chicken)", price: 175, available: true },
+      { name: "Superkanja", price: 150, available: true },
+      { name: "Yassa Chicken", price: 200, available: true },
+      { name: "Chura Gerteh (Porridge)", price: 75, available: true },
+      { name: "Akara (Bean Fritters)", price: 50, available: true },
+      { name: "Tapalapa Bread with Omelette", price: 85, available: true },
+      { name: "Plasas (Leaf Sauce with Rice)", price: 150, available: true },
+      { name: "Grilled Tilapia with Rice", price: 225, available: true },
+      { name: "Attaya (Mint Tea Set)", price: 40, available: true },
+      { name: "Ginger Juice (Large)", price: 60, available: true },
+      { name: "Baobab Juice (Bouye)", price: 60, available: true }
+    ],
+    hours: {
+      enabled: true,
+      timezone: "Africa/Banjul",
+      open: 8,
+      close: 21
+    },
+    payment: {
+      wavePhone: "+2203532423",
+      currency: "GMD",
+      requireProof: true,
+      enabled: true
+    },
+    faq: [
+      { trigger: "do you deliver", reply: "Yes! We deliver within the local area. Minimum order is D150. Contact us to confirm your location." },
+      { trigger: "opening hours", reply: "We are open every day from 8:00 AM to 9:00 PM." },
+      { trigger: "how do i pay", reply: "We accept Wave mobile money. Send payment to +2203532423 and send a screenshot as proof." }
+    ],
+    settings: {
+      autoSuggestions: true,
+      enableLearning: true,
+      sessionTimeout: 30,
+      allowAfterHoursOrders: true,
+      closedMessage: "We're currently closed. We're open daily 8:00 AM – 9:00 PM. Please message us then!"
+    },
+    customMessages: {
+      welcomeMessage: "",
+      afterOrder: "",
+      afterBooking: "",
+      payment: "",
+      paymentInstructions: "",
+      closed: "",
+      orderPrompt: "",
+      bookPrompt: "",
+      servicePrompt: "",
+      timePrompt: "",
+      cancelMsg: "",
+      fallback: "",
+      loopFallback: ""
+    }
+  };
+
+  const [applyingSample, setApplyingSample] = useState(false);
+
+  const applySample = async () => {
+    if (!window.confirm('Apply the sample restaurant setup to your business? This will overwrite the current business configuration.')) return;
+    setApplyingSample(true);
+    try {
+      // Full replace — api.js adds x-api-key and tenantId automatically
+      await businessApi.update(SAMPLE_SETUP);
+      toast.success('Sample setup applied. Reloading business data...');
+      const res = await businessApi.get();
+      const d = res.data?.business || {};
+      setBizData(d);
+      setForm({
+        name:         d.name || '',
+        adminPhone:   d.adminPhone || '',
+        businessMode: d.businessMode || '',
+        description:  d.description || '',
+      });
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to apply sample setup');
+    } finally {
+      setApplyingSample(false);
+    }
+  };
+
   return (
     <div className="fade-in">
       <PageHeader
@@ -57,6 +145,21 @@ export default function BusinessSetupPage() {
       />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        {/* One-click sample setup for tenants */}
+        <Card>
+          <SectionTitle sub="Quickly populate your account with a working restaurant setup">One-click Setup</SectionTitle>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ maxWidth: 720 }}>
+              <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+                Use this to bootstrap your business with a sample restaurant configuration (menu, hours, payment, FAQ and messaging). Tenant authentication (Tenant ID + API Key) is used automatically from your session.
+              </p>
+            </div>
+            <div>
+              <Button onClick={applySample} loading={applyingSample} size="sm"><Building2 size={13} /> Apply Sample</Button>
+            </div>
+          </div>
+        </Card>
+
         {/* Basic info */}
         <Card>
           <SectionTitle>Basic Information</SectionTitle>
@@ -76,7 +179,7 @@ export default function BusinessSetupPage() {
           </div>
         </Card>
 
-        {/* Business mode — determines which flows the bot runs */}
+        {/* Business mode — determines what flows the bot runs */}
         <Card>
           <SectionTitle
             sub="Determines what flows the bot offers: ORDER, BOOKING, or both. Changing mode updates the bot's welcome buttons and available actions."
