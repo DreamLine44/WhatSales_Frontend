@@ -56,57 +56,62 @@ export default function BusinessInfoPage() {
     <div className="fade-in">
       <PageHeader icon={Building2} title="Business Info" subtitle="Your business profile and contact details" />
 
-      <Card style={{ maxWidth: 600 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <Input
-            label="Business Name *"
-            value={form.name}
-            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            placeholder="My Business"
-          />
-          <div>
-            <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>Description</label>
-            <textarea
-              value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              rows={3} placeholder="Tell customers what your business does…"
-              style={{ width: '100%', padding: '10px 13px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.875rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.6 }}
-              onFocus={e => e.target.style.borderColor = 'var(--primary)'}
-              onBlur={e => e.target.style.borderColor = 'var(--border-mid)'}
+      <div className="settings-2col">
+        <Card>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <Input
+              label="Business Name *"
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="My Business"
             />
-          </div>
-          <Input
-            label="Address"
-            value={form.address}
-            onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
-            placeholder="12 Kairaba Avenue, Serrekunda"
-            hint="Shown to customers who ask where you're located"
-          />
-          <Input
-            label="Admin Phone (WhatsApp)"
-            value={form.adminPhone}
-            onChange={e => setForm(f => ({ ...f, adminPhone: e.target.value }))}
-            placeholder="+220 xxx xxxx"
-            hint="Phone number for order/booking notifications"
-          />
+            <div>
+              <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 5 }}>Description</label>
+              <textarea
+                value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                rows={3} placeholder="Tell customers what your business does…"
+                style={{ width: '100%', padding: '10px 13px', border: '1.5px solid var(--border-mid)', borderRadius: 'var(--r-md)', fontFamily: 'var(--font-body)', fontSize: '0.875rem', background: 'var(--bg-surface)', color: 'var(--text-primary)', outline: 'none', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.6 }}
+                onFocus={e => e.target.style.borderColor = 'var(--primary)'}
+                onBlur={e => e.target.style.borderColor = 'var(--border-mid)'}
+              />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+              <Input
+                label="Address"
+                value={form.address}
+                onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+                placeholder="12 Kairaba Avenue, Serrekunda"
+                hint="Shown to customers who ask where you're located"
+              />
+              <Input
+                label="Admin Phone (WhatsApp)"
+                value={form.adminPhone}
+                onChange={e => setForm(f => ({ ...f, adminPhone: e.target.value }))}
+                placeholder="+220 xxx xxxx"
+                hint="Phone number for order/booking notifications"
+              />
+            </div>
 
-          {/* Business mode — read-only, managed by admin via /admin/tenants/:id */}
+            <Btn onClick={handleSave} loading={saving} style={{ alignSelf: 'flex-start' }}>
+              <Save size={15} /> Save Changes
+            </Btn>
+          </div>
+        </Card>
+
+        {/* Business mode — read-only, managed by admin via /admin/tenants/:id */}
+        <Card>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 14,
-            padding: '14px 16px', background: 'var(--bg-overlay)',
-            borderRadius: 'var(--r-md)', border: '1.5px solid var(--border)',
+            padding: '4px 2px',
           }}>
-            <span style={{ fontSize: '1.5rem', flexShrink: 0 }}>{modeConfig.emoji}</span>
+            <span style={{ fontSize: '1.8rem', flexShrink: 0 }}>{modeConfig.emoji}</span>
             <div>
               <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{modeConfig.label}</div>
               <div style={{ fontSize: '0.77rem', color: 'var(--text-muted)' }}>Business mode is managed by your administrator</div>
             </div>
           </div>
-
-          <Btn onClick={handleSave} loading={saving} style={{ alignSelf: 'flex-start' }}>
-            <Save size={15} /> Save Changes
-          </Btn>
-        </div>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }

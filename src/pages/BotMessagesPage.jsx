@@ -115,7 +115,7 @@ export default function BotMessagesPage() {
         Leave fields blank to use the default messages for your business type. Custom messages take full priority over defaults.
       </InfoBanner>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 700 }}>
+      <div className="cards-2col">
         {FIELD_GROUPS.map(group => (
           <Card key={group.heading}>
             <SectionHeading>{group.heading}</SectionHeading>
@@ -131,11 +131,11 @@ export default function BotMessagesPage() {
             </div>
           </Card>
         ))}
-
-        <Btn onClick={save} loading={saving} style={{ alignSelf: 'flex-start' }}>
-          <Save size={15} /> Save Messages
-        </Btn>
       </div>
+
+      <Btn onClick={save} loading={saving} style={{ alignSelf: 'flex-start', marginTop: 20 }}>
+        <Save size={15} /> Save Messages
+      </Btn>
     </div>
   );
 }

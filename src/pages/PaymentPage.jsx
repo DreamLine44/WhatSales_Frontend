@@ -145,32 +145,7 @@ export default function PaymentPage() {
         {PROVIDER_SUGGESTIONS.map(p => <option key={p} value={p} />)}
       </datalist>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 780 }}>
-        <Card>
-          <SectionHeading>General</SectionHeading>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <Toggle
-              checked={enabled}
-              onChange={setEnabled}
-              label="Accept Payments"
-              hint="When off, customers place orders without a payment step"
-            />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Input
-                label="Currency" value={currency}
-                onChange={e => setCurrency(e.target.value)}
-                placeholder="GMD" hint="Shown next to every price"
-              />
-            </div>
-            <Toggle
-              checked={requireProof}
-              onChange={setRequireProof}
-              label="Require Payment Proof"
-              hint="Customer must send a screenshot before an order is confirmed by an admin"
-            />
-          </div>
-        </Card>
-
+      <div className="settings-2col">
         <Card>
           <SectionHeading action={<Btn size="xs" variant="soft" onClick={addChannel}><Plus size={13} /> Add Account</Btn>}>
             Payment Accounts
@@ -178,7 +153,7 @@ export default function PaymentPage() {
 
           {!enabled && (
             <InfoBanner type="info" style={{ marginBottom: 14 }}>
-              Payments are currently off — turn on "Accept Payments" above for these accounts to be shown to customers.
+              Payments are currently off — turn on "Accept Payments" to have these accounts shown to customers.
             </InfoBanner>
           )}
 
@@ -203,15 +178,38 @@ export default function PaymentPage() {
             </div>
           )}
 
-          <div style={{ marginTop: 4, fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+          <div style={{ marginTop: 12, fontSize: '0.76rem', color: 'var(--text-muted)' }}>
             No live payment gateway is used — customers send money directly to one of these accounts, then share a
             screenshot in chat. An admin confirms the payment before the order proceeds.
           </div>
+
+          <Btn onClick={save} loading={saving} style={{ marginTop: 16 }}>
+            <Save size={15} /> Save Payment Settings
+          </Btn>
         </Card>
 
-        <Btn onClick={save} loading={saving} style={{ alignSelf: 'flex-start' }}>
-          <Save size={15} /> Save Payment Settings
-        </Btn>
+        <Card>
+          <SectionHeading>General</SectionHeading>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <Toggle
+              checked={enabled}
+              onChange={setEnabled}
+              label="Accept Payments"
+              hint="When off, customers place orders without a payment step"
+            />
+            <Input
+              label="Currency" value={currency}
+              onChange={e => setCurrency(e.target.value)}
+              placeholder="GMD" hint="Shown next to every price"
+            />
+            <Toggle
+              checked={requireProof}
+              onChange={setRequireProof}
+              label="Require Payment Proof"
+              hint="Customer must send a screenshot before an order is confirmed by an admin"
+            />
+          </div>
+        </Card>
       </div>
     </div>
   );

@@ -266,6 +266,41 @@ input, select, textarea { font-family: inherit; }
   .grid-auto { grid-template-columns: 1fr; }
 }
 
+/* ── Settings page layouts ───────────────────────────────────────────────
+   [UX-WIDTH-FIX] Several settings pages (Business Info, Payment, Opening
+   Hours, Bot Messages) previously wrapped their content in a fixed
+   `maxWidth: 600-780px` div, which left a large empty gap on the right on
+   any screen wider than that — the .page-content shell itself already
+   caps out at var(--content-max) (1140px) and centers, so a second, much
+   narrower cap inside it was redundant and wasteful of space. These two
+   utilities replace that pattern: a main+sidebar split for pages with one
+   dominant form plus secondary info, and an auto-flowing card grid for
+   pages made of several independent, same-weight sections. Both collapse
+   to a single column on narrower screens so nothing regresses on mobile. */
+.settings-2col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 20px;
+  align-items: start;
+  width: 100%;
+}
+/* Modifier: swap the split so the narrow column comes first (aside-then-main)
+   — used when the second section is the one that actually needs the room. */
+.settings-2col-reverse { grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); }
+
+@media (max-width: 900px) {
+  .settings-2col,
+  .settings-2col-reverse { grid-template-columns: 1fr; }
+}
+
+.cards-2col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+  align-items: start;
+  width: 100%;
+}
+
 /* ── Skeleton loading ────────────────────────────────────────────────────── */
 .skeleton {
   background: linear-gradient(90deg, var(--bg-overlay) 25%, var(--bg-sunken) 50%, var(--bg-overlay) 75%);
