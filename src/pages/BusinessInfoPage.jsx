@@ -17,6 +17,7 @@ export default function BusinessInfoPage() {
         setForm({
           name:         biz.name         || '',
           description:  biz.description  || '',
+          address:      biz.address      || '',
           adminPhone:   biz.adminPhone   || '',
           businessMode: biz.businessMode || 'RESTAURANT',
         });
@@ -32,9 +33,14 @@ export default function BusinessInfoPage() {
       // PATCH /dashboard/:id/settings — partial update, only sends the fields this page owns.
       // Previously used PUT /business/:id which replaces the whole document and
       // would silently drop any fields not included in this payload.
+      // [FIX-ADDR] 'address' is now in the backend's PATCH whitelist and is used by
+      // the bot's "About Us" reply — previously this field existed on the schema
+      // and even had a frontend spot reserved for it in comments, but saving it
+      // here was silently rejected server-side, so it never had a real UI until now.
       await bizApi.updateSettings({
         name:        form.name.trim(),
         description: form.description,
+        address:     form.address,
         adminPhone:  form.adminPhone,
       });
       toast.success('Business info saved');
@@ -68,6 +74,13 @@ export default function BusinessInfoPage() {
               onBlur={e => e.target.style.borderColor = 'var(--border-mid)'}
             />
           </div>
+          <Input
+            label="Address"
+            value={form.address}
+            onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+            placeholder="12 Kairaba Avenue, Serrekunda"
+            hint="Shown to customers who ask where you're located"
+          />
           <Input
             label="Admin Phone (WhatsApp)"
             value={form.adminPhone}

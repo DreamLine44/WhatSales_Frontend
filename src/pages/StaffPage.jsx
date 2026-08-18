@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Users, Plus, Trash2, Copy, Check, Shield, ShieldAlert, ShieldCheck } from 'lucide-react';
-import { staffApi, staffAuthApi, getTenantId } from '../api.js';
+import { Users, Plus, Trash2, Copy, Check, Shield, ShieldAlert, ShieldCheck, KeyRound, Lock, AlertTriangle } from 'lucide-react';
+import { staffApi, staffAuthApi, bizApi, getTenantId } from '../api.js';
 import { useAuth } from '../store/AuthContext.jsx';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Input, Select, Badge, Modal } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
@@ -119,6 +119,135 @@ function ClaimOwnerCard({ onClaimed }) {
           onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="At least 8 characters" />
         <Btn onClick={submit} loading={saving} style={{ alignSelf: 'flex-start' }}>Create Owner Account</Btn>
       </div>
+    </Card>
+  );
+}
+
+// [NO-SELFSERVE-PASSWORD-1] Backend now supports POST /dashboard/auth/change-password —
+// only reachable while signed in with an individual Bearer session (adminSession
+// truthy), not the shared legacy API key, which has no individual password at all.
+function ChangePasswordCard() {
+  const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
+  const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const submit = async () => {
+    if (!form.currentPassword || !form.newPassword) { toast.error('Both fields are required'); return; }
+    if (form.newPassword.length < 8) { toast.error('New password must be at least 8 characters'); return; }
+    if (form.newPassword !== form.confirm) { toast.error("New password and confirmation don't match"); return; }
+    setSaving(true);
+    try {
+      await staffAuthApi.changePassword(form.currentPassword, form.newPassword);
+      toast.success('Password changed');
+      setForm({ currentPassword: '', newPassword: '', confirm: '' });
+      setOpen(false);
+    } catch (err) { toast.error(err.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Card style={{ maxWidth: 480, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Lock size={16} color="var(--text-muted)" />
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Password</div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Change the password for your own account</div>
+          </div>
+        </div>
+        {!open && <Btn size="sm" variant="soft" onClick={() => setOpen(true)}>Change</Btn>}
+      </div>
+      {open && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+          <Input label="Current password" type="password" value={form.currentPassword}
+            onChange={e => setForm(f => ({ ...f, currentPassword: e.target.value }))} />
+          <Input label="New password" type="password" value={form.newPassword}
+            onChange={e => setForm(f => ({ ...f, newPassword: e.target.value }))} placeholder="At least 8 characters" />
+          <Input label="Confirm new password" type="password" value={form.confirm}
+            onChange={e => setForm(f => ({ ...f, confirm: e.target.value }))} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn size="sm" onClick={submit} loading={saving}>Save Password</Btn>
+            <Btn size="sm" variant="ghost" onClick={() => { setOpen(false); setForm({ currentPassword: '', newPassword: '', confirm: '' }); }}>Cancel</Btn>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// [NO-SELFSERVE-APIKEY-1] Backend now supports POST /dashboard/:tenantId/rotate-key,
+// OWNER-gated. Rotating immediately invalidates the previous shared key for every
+// other admin/script still using it, so this is a two-step confirm with the new
+// key shown exactly once, mirroring InviteLinkModal's own "shown once, copy it now" UX.
+function RotateKeyCard() {
+  const [confirming, setConfirming] = useState(false);
+  const [rotating, setRotating] = useState(false);
+  const [newKey, setNewKey] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  const rotate = async () => {
+    setRotating(true);
+    try {
+      const r = await bizApi.rotateOwnApiKey();
+      setNewKey(r.data.apiKey);
+      setConfirming(false);
+      toast.success('API key rotated — the old key no longer works');
+    } catch (err) { toast.error(err.message); }
+    finally { setRotating(false); }
+  };
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(newKey); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+    catch { toast.error('Could not copy — select and copy the key manually'); }
+  };
+
+  return (
+    <Card style={{ maxWidth: 480, marginBottom: 16, borderColor: confirming ? 'var(--red)' : undefined }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <KeyRound size={16} color="var(--text-muted)" />
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Shared API Key</div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Used by scripts and the legacy login — rotate it if you suspect it's leaked</div>
+          </div>
+        </div>
+        {!confirming && !newKey && <Btn size="sm" variant="soft" onClick={() => setConfirming(true)}>Rotate</Btn>}
+      </div>
+
+      {confirming && (
+        <div style={{ marginTop: 16, padding: 12, background: 'var(--red-dim, rgba(220,38,38,0.06))', border: '1.5px solid rgba(220,38,38,0.25)', borderRadius: 'var(--r-md)' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 12 }}>
+            <AlertTriangle size={15} color="var(--red)" style={{ flexShrink: 0, marginTop: 1 }} />
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.55, margin: 0 }}>
+              This immediately invalidates the current key. Any script, integration, or device still signed in with
+              the old key (not your Team Login — that's unaffected) will stop working until updated with the new one.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Btn size="sm" onClick={rotate} loading={rotating} style={{ background: 'var(--red)' }}>Yes, Rotate Key</Btn>
+            <Btn size="sm" variant="ghost" onClick={() => setConfirming(false)}>Cancel</Btn>
+          </div>
+        </div>
+      )}
+
+      {newKey && (
+        <div style={{ marginTop: 16 }}>
+          <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.55, marginBottom: 10 }}>
+            <strong>This key is shown once</strong> — copy it now and update anywhere it's used.
+          </p>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: 'var(--bg-overlay)', border: '1.5px solid var(--border)',
+            borderRadius: 'var(--r-md)', padding: '10px 12px', marginBottom: 12,
+          }}>
+            <code style={{ flex: 1, fontSize: '0.76rem', wordBreak: 'break-all', color: 'var(--text-secondary)' }}>{newKey}</code>
+            <Btn size="sm" variant="soft" onClick={copy}>
+              {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? 'Copied' : 'Copy'}
+            </Btn>
+          </div>
+          <Btn size="sm" variant="ghost" onClick={() => setNewKey(null)}>Done</Btn>
+        </div>
+      )}
     </Card>
   );
 }
@@ -265,6 +394,13 @@ export default function StaffPage() {
           edit, or remove team members.
         </div>
       )}
+
+      {/* [NO-SELFSERVE-PASSWORD-1] / [NO-SELFSERVE-APIKEY-1] — Account & Security.
+          Password change needs an individual Bearer session (a legacy shared-key
+          login has no password of its own). Key rotation is OWNER-only, matching
+          the backend route's requireRole('OWNER') gate. */}
+      {adminSession && <ChangePasswordCard />}
+      {isOwner && <RotateKeyCard />}
 
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}><Spinner size={28} /></div>

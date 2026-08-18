@@ -148,6 +148,12 @@ export const staffAuthApi = {
   acceptInvite: (inviteToken, password) => axios.post(`${BASE_URL}/dashboard/auth/accept-invite`, { inviteToken, password }, { timeout: 12000 })
     .catch(err => { throw new Error(err.response?.data?.error || err.message); }),
   me: () => http.get('/dashboard/auth/me'),
+  // [NO-SELFSERVE-PASSWORD-1] POST /dashboard/auth/change-password — requires an
+  // active Bearer session (a legacy x-api-key caller has no individual password
+  // to change; the backend rejects that case with a 400 rather than a confusing
+  // no-op). body: { currentPassword, newPassword }
+  changePassword: (currentPassword, newPassword) =>
+    http.post('/dashboard/auth/change-password', { currentPassword, newPassword }),
   // Must be called while the legacy tenant x-api-key is the active credential
   // (not a staff Bearer token) — possession of that key is the proof of
   // ownership this one-time bootstrap relies on.
@@ -206,6 +212,13 @@ export const bizApi = {
   // 404 here — that's expected, not an error, and callers should treat it as "no
   // request on file" rather than surfacing it to the user.
   connectionRequestStatus: () => http.get('/api/whatsapp/request/status'),
+  // [NO-SELFSERVE-APIKEY-1] POST /dashboard/:tenantId/rotate-key → { ok, apiKey, note }
+  // OWNER-only at the route level (403 for MANAGER/STAFF Bearer sessions — a
+  // legacy x-api-key caller is treated as OWNER-equivalent, same as every other
+  // route gated with requireRole('OWNER')). Invalidates the previous shared key
+  // immediately — anything else still using it (scripts, the old key on another
+  // device) stops working the moment this succeeds. ⚠ apiKey is returned ONCE.
+  rotateOwnApiKey: () => http.post(`/dashboard/${getTenantId()}/rotate-key`),
 };
 
 // ── Menu CRUD — /dashboard/:tenantId/menu ─────────────────────────────────────

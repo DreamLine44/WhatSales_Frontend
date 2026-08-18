@@ -1,10 +1,18 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Users, RefreshCw, ShoppingBag, Phone, Package } from 'lucide-react';
-import { dashApi } from '../api.js';
+import { dashApi, formatMoney } from '../api.js';
+import { useAuth } from '../store/AuthContext.jsx';
 import { PageHeader, Card, Btn, EmptyState, Spinner, Avatar, SearchInput, Pagination, StatusBadge } from '../components/ui.jsx';
 import toast from 'react-hot-toast';
 
-function OrderHistory({ phone }) {
+// [FIX-CUSTOMERS-CURRENCY] This order-history row hardcoded the Gambian
+// Dalasi symbol 'D' instead of reading the tenant's configured currency —
+// the exact bug class already fixed everywhere else (see formatMoney's own
+// [AUDIT-FIX-CURRENCY] note in api.js and OrdersPage/ServicesPage/
+// PromotionsPage, which all correctly use it). This is the one place that
+// was missed: a tenant on a non-Dalasi currency would see every past order
+// in a customer's expanded card mislabelled with the wrong symbol.
+function OrderHistory({ phone, currency }) {
   const [orders, setOrders]   = useState(null); // null = not yet loaded
   const [loading, setLoading] = useState(true);
 
@@ -41,7 +49,7 @@ function OrderHistory({ phone }) {
             </div>
           </div>
           {o.totalPrice != null && (
-            <span style={{ fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>D {Number(o.totalPrice).toFixed(0)}</span>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, flexShrink: 0 }}>{formatMoney(o.totalPrice, currency)}</span>
           )}
           <StatusBadge status={o.status} />
         </div>
@@ -50,7 +58,7 @@ function OrderHistory({ phone }) {
   );
 }
 
-function CustomerCard({ customer }) {
+function CustomerCard({ customer, currency }) {
   // [FIX-CUSTOMERS-SCHEMA] UserProfile has no name/customerName field at all — the
   // closest thing is lead.name, only populated when lead capture is enabled and the
   // customer completed it. totalOrders/totalBookings live under stats.*, favourite
@@ -143,7 +151,7 @@ function CustomerCard({ customer }) {
               <div style={{ fontSize: '0.69rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Recent Orders</div>
               {/* Mounted only while expanded — lazily fetches, and unmounts (dropping
                   cached state) when collapsed, so reopening always shows fresh data. */}
-              <OrderHistory phone={phone} />
+              <OrderHistory phone={phone} currency={currency} />
             </div>
           )}
         </div>
@@ -153,6 +161,8 @@ function CustomerCard({ customer }) {
 }
 
 export default function CustomersPage() {
+  const { user } = useAuth();
+  const currency = user?.currency;
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [total, setTotal]         = useState(0);
@@ -241,7 +251,7 @@ export default function CustomersPage() {
       ) : (
         <>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} className="stagger">
-            {customers.map((c, i) => <CustomerCard key={c._id || i} customer={c} />)}
+            {customers.map((c, i) => <CustomerCard key={c._id || i} customer={c} currency={currency} />)}
           </div>
           <Pagination page={page} total={total} limit={LIMIT} onChange={setPage} />
         </>
